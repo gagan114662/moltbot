@@ -77,9 +77,11 @@ export async function markAuthProfileUsed(params: {
 
 export function calculateAuthProfileCooldownMs(errorCount: number): number {
   const normalized = Math.max(1, errorCount);
+  // Much shorter cooldowns - rate limits often reset within minutes
+  // Error 1: 15s, Error 2: 30s, Error 3: 1min, Error 4+: 2min max
   return Math.min(
-    60 * 60 * 1000, // 1 hour max
-    60 * 1000 * 5 ** Math.min(normalized - 1, 3),
+    2 * 60 * 1000, // 2 minutes max (was 1 hour - way too aggressive)
+    15 * 1000 * 2 ** Math.min(normalized - 1, 3), // 2x multiplier starting at 15s
   );
 }
 

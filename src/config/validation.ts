@@ -1,6 +1,12 @@
 import path from "node:path";
 import type { OpenClawConfig, ConfigValidationIssue } from "./types.js";
 import { resolveAgentWorkspaceDir, resolveDefaultAgentId } from "../agents/agent-scope.js";
+import {
+  isCliProvider,
+  modelKey,
+  normalizeProviderId,
+  parseModelRef,
+} from "../agents/model-selection.js";
 import { CHANNEL_IDS, normalizeChatChannelId } from "../channels/registry.js";
 import {
   normalizePluginsConfig,
@@ -82,6 +88,162 @@ function validateIdentityAvatar(config: OpenClawConfig): ConfigValidationIssue[]
   return issues;
 }
 
+type ModelRefIssueCandidate = {
+  path: string;
+  value: string;
+};
+
+function collectModelRefCandidates(config: OpenClawConfig): ModelRefIssueCandidate[] {
+  const defaults = config.agents?.defaults;
+  if (!defaults) {
+    return [];
+  }
+
+  const list: ModelRefIssueCandidate[] = [];
+  const push = (path: string, value: string | undefined) => {
+    const trimmed = value?.trim();
+    if (trimmed) {
+      list.push({ path, value: trimmed });
+    }
+  };
+  const pushMany = (pathPrefix: string, values: string[] | undefined) => {
+    if (!Array.isArray(values)) return;
+    values.forEach((value, index) => push(`${pathPrefix}.${index}`, value));
+  };
+
+  const modelConfig = defaults.model;
+  if (typeof modelConfig === "string") {
+    push("agents.defaults.model", modelConfig);
+  } else {
+    push("agents.defaults.model.primary", modelConfig?.primary);
+    pushMany("agents.defaults.model.fallbacks", modelConfig?.fallbacks);
+  }
+
+  const imageModelConfig = defaults.imageModel;
+  if (typeof imageModelConfig === "string") {
+    push("agents.defaults.imageModel", imageModelConfig);
+  } else {
+    push("agents.defaults.imageModel.primary", imageModelConfig?.primary);
+    pushMany("agents.defaults.imageModel.fallbacks", imageModelConfig?.fallbacks);
+  }
+
+  push("agents.defaults.feedbackLoop.coder", defaults.feedbackLoop?.coder);
+  push("agents.defaults.feedbackLoop.reviewer", defaults.feedbackLoop?.reviewer);
+  pushMany(
+    "agents.defaults.feedbackLoop.reviewerFallbacks",
+    defaults.feedbackLoop?.reviewerFallbacks,
+  );
+
+  push("agents.defaults.resilience.breakGlass.model", defaults.resilience?.breakGlass?.model);
+
+  return list;
+}
+
+function resolveKnownProviders(config: OpenClawConfig): Set<string> {
+  const known = new Set<string>([
+    "anthropic",
+    "openai",
+    "openai-codex",
+    "google",
+    "google-antigravity",
+    "openrouter",
+    "xai",
+    "groq",
+    "together",
+    "deepseek",
+    "zai",
+    "qwen-portal",
+    "kimi-coding",
+  ]);
+
+  const providerConfigs = config.models?.providers ?? {};
+  for (const key of Object.keys(providerConfigs)) {
+    known.add(normalizeProviderId(key));
+  }
+  const profiles = config.auth?.profiles ?? {};
+  for (const profile of Object.values(profiles)) {
+    if (profile?.provider) {
+      known.add(normalizeProviderId(profile.provider));
+    }
+  }
+  const cliBackends = config.agents?.defaults?.cliBackends ?? {};
+  for (const key of Object.keys(cliBackends)) {
+    known.add(normalizeProviderId(key));
+  }
+
+  return known;
+}
+
+function validateResilienceModelPolicy(config: OpenClawConfig): ConfigValidationIssue[] {
+  const defaults = config.agents?.defaults;
+  if (!defaults) {
+    return [];
+  }
+
+  const issues: ConfigValidationIssue[] = [];
+  const knownProviders = resolveKnownProviders(config);
+  const allowlistRaw = defaults.resilience?.providers?.allowlist ?? [];
+  const allowlistKeys = new Set<string>();
+
+  if (Array.isArray(allowlistRaw)) {
+    allowlistRaw.forEach((raw, index) => {
+      const parsed = parseModelRef(String(raw ?? ""), "anthropic");
+      if (!parsed) {
+        issues.push({
+          path: `agents.defaults.resilience.providers.allowlist.${index}`,
+          message: "invalid model reference; expected provider/model",
+        });
+        return;
+      }
+      allowlistKeys.add(modelKey(parsed.provider, parsed.model));
+    });
+  }
+
+  for (const candidate of collectModelRefCandidates(config)) {
+    const parsed = parseModelRef(candidate.value, "anthropic");
+    if (!parsed) {
+      issues.push({
+        path: candidate.path,
+        message: "invalid model reference; expected provider/model",
+      });
+      continue;
+    }
+
+    const providerKey = normalizeProviderId(parsed.provider);
+    if (!knownProviders.has(providerKey) && !isCliProvider(providerKey, config)) {
+      issues.push({
+        path: candidate.path,
+        message: `unknown model provider: ${parsed.provider}`,
+      });
+    }
+
+    if (allowlistKeys.size > 0 && !allowlistKeys.has(modelKey(parsed.provider, parsed.model))) {
+      issues.push({
+        path: candidate.path,
+        message:
+          "model is not in resilience.providers.allowlist; add it or update the configured model.",
+      });
+    }
+  }
+
+  const minHealthyProviders = defaults.resilience?.providers?.minHealthyProviders;
+  if (
+    typeof minHealthyProviders === "number" &&
+    minHealthyProviders > 0 &&
+    allowlistKeys.size > 0
+  ) {
+    const providerCount = new Set(Array.from(allowlistKeys).map((item) => item.split("/")[0])).size;
+    if (providerCount < minHealthyProviders) {
+      issues.push({
+        path: "agents.defaults.resilience.providers.minHealthyProviders",
+        message: `minHealthyProviders=${minHealthyProviders} exceeds configured allowlist providers (${providerCount})`,
+      });
+    }
+  }
+
+  return issues;
+}
+
 export function validateConfigObject(
   raw: unknown,
 ): { ok: true; config: OpenClawConfig } | { ok: false; issues: ConfigValidationIssue[] } {
@@ -120,6 +282,10 @@ export function validateConfigObject(
   const avatarIssues = validateIdentityAvatar(validated.data as OpenClawConfig);
   if (avatarIssues.length > 0) {
     return { ok: false, issues: avatarIssues };
+  }
+  const resilienceIssues = validateResilienceModelPolicy(validated.data as OpenClawConfig);
+  if (resilienceIssues.length > 0) {
+    return { ok: false, issues: resilienceIssues };
   }
   return {
     ok: true,

@@ -1,0 +1,12 @@
+{
+  "id": "feedback-loop",
+  "name": "Feedback Loop",
+  "description": "Iterative Coder/Reviewer feedback loop - Codex codes, Claude verifies until approved.",
+  "configSchema": {
+    "type": "object",
+    "additionalProperties": false,
+    "properties": {
+      "enabled": { "type": "boolean" }
+    }
+  }
+}

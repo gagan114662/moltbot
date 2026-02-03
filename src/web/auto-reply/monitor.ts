@@ -27,6 +27,10 @@ import { formatError, getWebAuthAgeMs, readWebSelfId } from "../session.js";
 import { DEFAULT_WEB_MEDIA_BYTES } from "./constants.js";
 import { whatsappHeartbeatLog, whatsappLog } from "./loggers.js";
 import { buildMentionConfig } from "./mentions.js";
+import {
+  createDurableInboundQueue,
+  resolveDurableQueuePath,
+} from "./monitor/durable-inbound-queue.js";
 import { createEchoTracker } from "./monitor/echo.js";
 import { createWebOnMessageHandler } from "./monitor/on-message.js";
 import { isLikelyWhatsAppCryptoError } from "./util.js";
@@ -149,6 +153,7 @@ export async function monitorWebChannel(
     const startedAt = Date.now();
     let heartbeat: NodeJS.Timeout | null = null;
     let watchdogTimer: NodeJS.Timeout | null = null;
+    let queueDrainTimer: NodeJS.Timeout | null = null;
     let lastMessageAt: number | null = null;
     let handledMessages = 0;
     let _lastInboundMsg: WebInboundMsg | null = null;
@@ -173,6 +178,20 @@ export async function monitorWebChannel(
       replyLogger,
       baseMentionConfig,
       account,
+    });
+    const queueRetry = cfg.agents?.defaults?.resilience?.cooldown?.queueRetry ?? {};
+    const queueBackoffSec = Array.isArray(queueRetry.backoffSec)
+      ? queueRetry.backoffSec.filter(
+          (value): value is number => Number.isFinite(value) && value > 0,
+        )
+      : [30, 120, 300, 900];
+    const durableInboundQueue = createDurableInboundQueue({
+      queuePath: resolveDurableQueuePath(account.authDir, account.accountId),
+      backoffSec: queueBackoffSec.length > 0 ? queueBackoffSec : [30, 120, 300, 900],
+      maxAttempts: Math.max(1, queueRetry.maxAttempts ?? 20),
+      onWarn: (message) => {
+        reconnectLogger.warn({ connectionId, message }, "durable inbound queue warning");
+      },
     });
 
     const inboundDebounceMs = resolveInboundDebounceMs({ cfg, channel: "whatsapp" });
@@ -204,7 +223,19 @@ export async function monitorWebChannel(
         status.lastEventAt = lastMessageAt;
         emitStatus();
         _lastInboundMsg = msg;
-        await onMessage(msg);
+        try {
+          await durableInboundQueue.enqueueAndProcess(msg, onMessage);
+        } catch (err) {
+          reconnectLogger.warn(
+            {
+              connectionId,
+              messageId: msg.id,
+              from: msg.from,
+              error: formatError(err),
+            },
+            "inbound processing failed; message retained in durable queue",
+          );
+        }
       },
     });
 
@@ -226,6 +257,20 @@ export async function monitorWebChannel(
     });
 
     setActiveWebListener(account.accountId, listener);
+    void durableInboundQueue.drainReady(onMessage).catch((err) => {
+      reconnectLogger.warn(
+        { connectionId, error: formatError(err) },
+        "initial durable inbound queue drain failed",
+      );
+    });
+    queueDrainTimer = setInterval(() => {
+      void durableInboundQueue.drainReady(onMessage).catch((err) => {
+        reconnectLogger.warn(
+          { connectionId, error: formatError(err) },
+          "durable inbound queue drain failed",
+        );
+      });
+    }, 15_000);
     unregisterUnhandled = registerUnhandledRejectionHandler((reason) => {
       if (!isLikelyWhatsAppCryptoError(reason)) {
         return false;
@@ -254,6 +299,9 @@ export async function monitorWebChannel(
       }
       if (watchdogTimer) {
         clearInterval(watchdogTimer);
+      }
+      if (queueDrainTimer) {
+        clearInterval(queueDrainTimer);
       }
       if (backgroundTasks.size > 0) {
         await Promise.allSettled(backgroundTasks);

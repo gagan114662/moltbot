@@ -9,7 +9,7 @@ import { resolveAgentModelFallbacksOverride } from "../../agents/agent-scope.js"
 import { runCliAgent } from "../../agents/cli-runner.js";
 import { getCliSessionId } from "../../agents/cli-session.js";
 import { runWithModelFallback } from "../../agents/model-fallback.js";
-import { isCliProvider } from "../../agents/model-selection.js";
+import { isCliProvider, parseModelRef } from "../../agents/model-selection.js";
 import {
   isCompactionFailureError,
   isContextOverflowError,
@@ -50,6 +50,62 @@ export type AgentRunLoopResult =
       directlySentBlockKeys?: Set<string>;
     }
   | { kind: "final"; payload: ReplyPayload };
+
+type QueueRetryPolicy = {
+  enabled: boolean;
+  backoffSec: number[];
+  maxAttempts: number;
+};
+
+function resolveQueueRetryPolicy(config: FollowupRun["run"]["config"]): QueueRetryPolicy {
+  const retry = config.agents?.defaults?.resilience?.cooldown?.queueRetry;
+  const backoffSec = Array.isArray(retry?.backoffSec)
+    ? retry.backoffSec
+        .filter((value): value is number => Number.isFinite(value) && value > 0)
+        .map((value) => Math.round(value))
+    : [30, 120, 300, 900];
+  return {
+    enabled: retry?.enabled ?? true,
+    backoffSec: backoffSec.length > 0 ? backoffSec : [30, 120, 300, 900],
+    maxAttempts: Math.max(1, retry?.maxAttempts ?? 20),
+  };
+}
+
+function isRecoverableModelFailure(message: string): boolean {
+  const lower = message.toLowerCase();
+  return (
+    lower.includes("all models failed") &&
+    (lower.includes("rate_limit") ||
+      lower.includes("cooldown") ||
+      lower.includes("timeout") ||
+      lower.includes("temporarily unavailable"))
+  );
+}
+
+function enqueueRecoveryTicket(params: {
+  agentDir: string;
+  sessionKey?: string;
+  prompt: string;
+  reason: string;
+}): string | null {
+  try {
+    const id = crypto.randomUUID();
+    const queueDir = `${params.agentDir}/queue`;
+    fs.mkdirSync(queueDir, { recursive: true });
+    const queuePath = `${queueDir}/recovery.jsonl`;
+    const payload = {
+      id,
+      createdAt: new Date().toISOString(),
+      sessionKey: params.sessionKey ?? null,
+      reason: params.reason,
+      prompt: params.prompt,
+    };
+    fs.appendFileSync(queuePath, `${JSON.stringify(payload)}\n`, "utf-8");
+    return id;
+  } catch {
+    return null;
+  }
+}
 
 export async function runAgentTurnWithFallback(params: {
   commandBody: string;
@@ -97,6 +153,9 @@ export async function runAgentTurnWithFallback(params: {
   let fallbackProvider = params.followupRun.run.provider;
   let fallbackModel = params.followupRun.run.model;
   let didResetAfterCompactionFailure = false;
+  let recoveryAttempts = 0;
+  let usedBreakGlassModel = false;
+  const retryPolicy = resolveQueueRetryPolicy(params.followupRun.run.config);
 
   while (true) {
     try {
@@ -575,13 +634,56 @@ export async function runAgentTurnWithFallback(params: {
         };
       }
 
+      if (retryPolicy.enabled && isRecoverableModelFailure(message)) {
+        const breakGlassRaw =
+          params.followupRun.run.config.agents?.defaults?.resilience?.breakGlass?.model;
+        if (!usedBreakGlassModel && breakGlassRaw) {
+          const parsedBreakGlass = parseModelRef(breakGlassRaw, params.followupRun.run.provider);
+          if (parsedBreakGlass) {
+            params.followupRun.run.provider = parsedBreakGlass.provider;
+            params.followupRun.run.model = parsedBreakGlass.model;
+            usedBreakGlassModel = true;
+            defaultRuntime.error(
+              `Resilience recovery: switched to break-glass model ${parsedBreakGlass.provider}/${parsedBreakGlass.model}`,
+            );
+          }
+        }
+
+        if (recoveryAttempts < retryPolicy.maxAttempts) {
+          const delaySec =
+            retryPolicy.backoffSec[Math.min(recoveryAttempts, retryPolicy.backoffSec.length - 1)] ??
+            30;
+          recoveryAttempts += 1;
+          defaultRuntime.error(
+            `Resilience recovery: retrying agent run in ${delaySec}s (attempt ${recoveryAttempts}/${retryPolicy.maxAttempts})`,
+          );
+          await new Promise<void>((resolve) => {
+            setTimeout(() => resolve(), delaySec * 1000);
+          });
+          continue;
+        }
+      }
+
       defaultRuntime.error(`Embedded agent failed before reply: ${message}`);
       const trimmedMessage = message.replace(/\.\s*$/, "");
+      const recoveryTicketId = isRecoverableModelFailure(message)
+        ? enqueueRecoveryTicket({
+            agentDir: params.followupRun.run.agentDir,
+            sessionKey: params.sessionKey,
+            prompt: params.commandBody,
+            reason: message,
+          })
+        : null;
+
       const fallbackText = isContextOverflow
         ? "⚠️ Context overflow — prompt too large for this model. Try a shorter message or a larger-context model."
         : isRoleOrderingError
           ? "⚠️ Message ordering conflict - please try again. If this persists, use /new to start a fresh session."
-          : `⚠️ Agent failed before reply: ${trimmedMessage}.\nLogs: openclaw logs --follow`;
+          : isRecoverableModelFailure(message)
+            ? `⚠️ Model providers are temporarily unavailable after automatic retries. Your request has been queued for recovery${
+                recoveryTicketId ? ` (ticket ${recoveryTicketId.slice(0, 8)})` : ""
+              }.`
+            : `⚠️ I could not complete this turn: ${trimmedMessage}.\nLogs: openclaw logs --follow`;
 
       return {
         kind: "final",

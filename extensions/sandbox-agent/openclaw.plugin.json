@@ -1,0 +1,33 @@
+{
+  "id": "sandbox-agent",
+  "name": "Sandbox Agent",
+  "description": "Run coding agents (Claude Code, Codex, OpenCode, Amp) in isolated sandboxes with HTTP control.",
+  "configSchema": {
+    "type": "object",
+    "additionalProperties": true,
+    "properties": {
+      "enabled": { "type": "boolean" },
+      "defaultAgent": {
+        "type": "string",
+        "enum": ["claude", "codex", "opencode", "amp"]
+      },
+      "mode": {
+        "type": "string",
+        "enum": ["embedded", "remote"]
+      },
+      "serverUrl": { "type": "string" },
+      "token": { "type": "string" },
+      "port": { "type": "number" },
+      "workspaceDir": { "type": "string" },
+      "humanInTheLoop": {
+        "type": "object",
+        "additionalProperties": true,
+        "properties": {
+          "enabled": { "type": "boolean" },
+          "timeoutSeconds": { "type": "number" },
+          "autoApproveSafe": { "type": "boolean" }
+        }
+      }
+    }
+  }
+}

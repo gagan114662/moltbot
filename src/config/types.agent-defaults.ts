@@ -211,6 +211,12 @@ export type AgentDefaultsConfig = {
     /** Default thinking level for spawned sub-agents (e.g. "off", "low", "medium", "high"). */
     thinking?: string;
   };
+  /** Feedback loop: Coder↔Reviewer iterative workflow (Codex codes, Claude verifies). */
+  feedbackLoop?: FeedbackLoopConfig;
+  /** Reliability and failover controls for autonomous execution. */
+  resilience?: ResilienceConfig;
+  /** Paging/escalation policy for reliability incidents. */
+  alerts?: AlertsConfig;
   /** Optional sandbox settings for non-main sessions. */
   sandbox?: {
     /** Enable sandboxing for sessions. */
@@ -265,4 +271,257 @@ export type AgentCompactionMemoryFlushConfig = {
   prompt?: string;
   /** System prompt appended for the memory flush turn. */
   systemPrompt?: string;
+};
+
+/** Feedback loop command configuration (test, lint, etc.). */
+export type FeedbackLoopCommand = {
+  command: string;
+  timeoutSeconds?: number;
+  required?: boolean;
+};
+
+export type FeedbackLoopBrowserConfig = {
+  enabled?: boolean;
+  urls?: string[];
+  checkConsole?: boolean;
+  checkNetwork?: boolean;
+  screenshotOnError?: boolean;
+  /** Capture screenshots as proof of verification (default: true) */
+  captureScreenshots?: boolean;
+  /** Browser service URL (default: http://127.0.0.1:18789) */
+  browserUrl?: string;
+  /** Browser profile to use (default: "openclaw") */
+  profile?: string;
+  /** Custom JS function to evaluate - return false to fail check */
+  customCheck?: string;
+  /** Audio/video verification settings for media-heavy features. */
+  media?: {
+    /** Enable media checks (default: false). */
+    enabled?: boolean;
+    /** Require at least one media element when enabled (default: true). */
+    required?: boolean;
+    /** Optional selectors for audio elements; falls back to all <audio>. */
+    audioSelectors?: string[];
+    /** Optional selectors for video elements; falls back to all <video>. */
+    videoSelectors?: string[];
+    /** Minimum HTMLMediaElement.readyState expected (default: 1). */
+    minReadyState?: number;
+    /** Require element to be playable (readyState >= 2) (default: true). */
+    requirePlayable?: boolean;
+    /** Minimum duration in seconds when finite duration is available. */
+    minDurationSeconds?: number;
+    /** Max allowed audio chunk size in milliseconds for runtime checks. */
+    maxAudioChunkMs?: number;
+    /** Max allowed reconnect attempts during runtime verification. */
+    maxReconnects?: number;
+    /** Max allowed gap between video frames in milliseconds (p95). */
+    maxFrameGapMs?: number;
+    /** Min required media messages per minute during runtime checks. */
+    minMessagesPerMinute?: number;
+    /** Require ping/pong heartbeat success. */
+    requireBidirectionalPing?: boolean;
+    /** Max allowed websocket auth failures during runtime checks. */
+    maxAuthFailures?: number;
+  };
+};
+
+export type FeedbackLoopRoutingTarget = {
+  /** Human-readable target alias (e.g. "aitutor"). */
+  name: string;
+  /** Absolute repo/workspace path. */
+  path: string;
+  /** Optional branch regex pattern (e.g. "^v1$|^feature/"). */
+  branchPattern?: string;
+};
+
+export type FeedbackLoopRoutingConfig = {
+  /** Require explicit repo/branch binding before coding (default: false). */
+  requireRepoBinding?: boolean;
+  /** Force branch checks for selected target (default: false). */
+  requireBranchMatch?: boolean;
+  /** Allowed coding targets when binding is required. */
+  allowedTargets?: FeedbackLoopRoutingTarget[];
+  /** Behavior when routing is ambiguous. */
+  onAmbiguousTarget?: "fail_closed" | "ask" | "best_effort";
+  /** Optional default target alias. */
+  defaultTarget?: string;
+};
+
+export type FeedbackLoopInterventionConfig = {
+  pauseAfterIterations?: number;
+  pauseOnBrowserFail?: boolean;
+  requireApprovalAfter?: number;
+  notifyChannel?: "terminal" | "channel";
+};
+
+export type FeedbackLoopTerminalConfig = {
+  streamExchange?: boolean;
+  verbose?: boolean;
+};
+
+export type FeedbackLoopMemoryConfig = {
+  enabled?: boolean;
+  feedbackHistoryPath?: string;
+  searchBeforeReview?: boolean;
+  saveAfterReview?: boolean;
+};
+
+export type FeedbackLoopReviewConfig = {
+  useBrowser?: boolean;
+  requireStructuredFeedback?: boolean;
+  minimumUIScore?: number;
+  minimumCoverageScenarios?: number;
+};
+
+export type FeedbackLoopRegressionConfig = {
+  captureBaseline?: boolean;
+  compareScreenshots?: boolean;
+  failOnRegression?: boolean;
+};
+
+export type FeedbackLoopInterviewConfig = {
+  /** Enable interview mode for complex tasks */
+  enabled?: boolean;
+  /** Only interview for tasks above this complexity */
+  minComplexity?: "simple" | "medium" | "complex";
+};
+
+export type FeedbackLoopCommitConfig = {
+  /** Enable auto-commit after approval */
+  enabled?: boolean;
+  /** Commit message style */
+  messageStyle?: "conventional" | "descriptive" | "brief";
+  /** Require user confirmation before commit */
+  requireConfirmation?: boolean;
+  /** Auto-push after commit */
+  autoPush?: boolean;
+  /** Create PR after push */
+  createPR?: boolean;
+};
+
+/** Antigravity (Google Cloud Code Assist) fallback config */
+export type FeedbackLoopAntigravityConfig = {
+  /** Enable Antigravity as fallback when primary coder fails */
+  enabled?: boolean;
+  /** Preferred coder model (default: claude-sonnet-4-5 for speed) */
+  coderModel?: string;
+  /** Preferred reviewer model (default: claude-opus-4-5-thinking for thoroughness) */
+  reviewerModel?: string;
+  /** Use thinking models when available */
+  useThinking?: boolean;
+  /** Google Cloud project ID (auto-detected from OAuth if not set) */
+  projectId?: string;
+};
+
+/** Auto-trigger configuration for coding task detection */
+export type FeedbackLoopAutoTriggerConfig = {
+  /** Enable auto-triggering for detected coding tasks (default: false) */
+  enabled?: boolean;
+  /** Minimum confidence threshold to auto-trigger (0-1, default: 0.7) */
+  confidenceThreshold?: number;
+  /** Additional regex patterns to treat as coding tasks */
+  additionalPatterns?: string[];
+  /** Regex patterns to exclude from auto-triggering */
+  excludePatterns?: string[];
+  /** Only auto-trigger on these channels (empty = all channels) */
+  channels?: string[];
+  /** Skip auto-trigger for messages shorter than this (default: 15) */
+  minLength?: number;
+};
+
+export type FeedbackLoopGatesConfig = {
+  /** Require strict reviewer JSON schema before approval (default: true). */
+  requireReviewerJson?: boolean;
+  /** Require all configured verification commands to pass (default: true). */
+  requireAllCommandsPass?: boolean;
+  /** Require zero browser verification errors (default: true). */
+  requireNoBrowserErrors?: boolean;
+  /** Require proof artifacts (screenshots/check summaries) before approval (default: true). */
+  requireArtifactProof?: boolean;
+  /** Block approval when reviewer payload parsing fails (default: true). */
+  blockApprovalOnParseFailure?: boolean;
+  /** Require runtime session health evidence (JWT/session/ws lifecycle). */
+  requireRuntimeSessionHealthy?: boolean;
+  /** Require Gemini live session health evidence. */
+  requireGeminiLiveHealthy?: boolean;
+  /** Require no duplicate tool call evidence. */
+  requireNoToolCallDuplication?: boolean;
+  /** Require console warning/error budget checks to pass. */
+  requireConsoleBudget?: boolean;
+};
+
+export type FeedbackLoopConfig = {
+  enabled?: boolean;
+  coder?: string;
+  reviewer?: string;
+  reviewerFallbacks?: string[];
+  thinking?: "off" | "low" | "medium" | "high";
+  maxIterations?: number;
+  commands?: FeedbackLoopCommand[];
+  browser?: FeedbackLoopBrowserConfig;
+  terminal?: FeedbackLoopTerminalConfig;
+  intervention?: FeedbackLoopInterventionConfig;
+  acceptanceCriteria?: string[];
+  generateAcceptanceCriteria?: boolean;
+  checklistPath?: string;
+  memory?: FeedbackLoopMemoryConfig;
+  review?: FeedbackLoopReviewConfig;
+  regression?: FeedbackLoopRegressionConfig;
+  /** Interview mode for requirements gathering */
+  interview?: FeedbackLoopInterviewConfig;
+  /** Auto-commit configuration */
+  commit?: FeedbackLoopCommitConfig;
+  /** Antigravity (Google Cloud Code Assist) fallback - Codex fails → Antigravity codes */
+  antigravity?: FeedbackLoopAntigravityConfig;
+  /** Auto-trigger feedback loop for detected coding tasks */
+  autoTrigger?: FeedbackLoopAutoTriggerConfig;
+  /** Hard approval gates for deterministic autonomous delivery. */
+  gates?: FeedbackLoopGatesConfig;
+  /** Fail-closed routing policy for multi-repo workspaces. */
+  routing?: FeedbackLoopRoutingConfig;
+};
+
+export type ResilienceQueueRetryConfig = {
+  enabled?: boolean;
+  backoffSec?: number[];
+  maxAttempts?: number;
+};
+
+export type ResilienceConfig = {
+  /** Availability target (e.g. "99.99"). */
+  slo?: {
+    target?: string;
+  };
+  failover?: {
+    mode?: "active-active" | "active-passive";
+  };
+  providers?: {
+    /** Strictly allowed provider/model keys for runtime routing. */
+    allowlist?: string[];
+    /** Minimum providers that should remain healthy before alerting/failover escalation. */
+    minHealthyProviders?: number;
+  };
+  cooldown?: {
+    queueRetry?: ResilienceQueueRetryConfig;
+  };
+  storage?: {
+    sessions?: number;
+    memory?: number;
+    artifacts?: number;
+  };
+  proof?: {
+    video?: boolean;
+    artifacts?: boolean;
+  };
+  /** Emergency model used when normal model selection is unavailable. */
+  breakGlass?: {
+    model?: string;
+  };
+};
+
+export type AlertsConfig = {
+  paging?: {
+    enabled?: boolean;
+    escalationMinutes?: number[];
+  };
 };

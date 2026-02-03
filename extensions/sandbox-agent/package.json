@@ -1,0 +1,20 @@
+{
+  "name": "@openclaw/sandbox-agent",
+  "version": "2026.2.2",
+  "type": "module",
+  "description": "Sandbox Agent integration for OpenClaw - run coding agents in isolated sandboxes",
+  "openclaw": {
+    "extensions": [
+      "./index.ts"
+    ]
+  },
+  "dependencies": {
+    "sandbox-agent": "^0.1.5"
+  },
+  "peerDependencies": {
+    "openclaw": ">=2026.1.26"
+  },
+  "devDependencies": {
+    "openclaw": "workspace:*"
+  }
+}
