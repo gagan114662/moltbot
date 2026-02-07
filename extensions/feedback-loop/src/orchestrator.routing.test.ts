@@ -1,5 +1,4 @@
 import { describe, expect, it } from "vitest";
-
 import { resolveBoundTarget } from "./orchestrator.js";
 
 describe("resolveBoundTarget", () => {
@@ -56,4 +55,3 @@ describe("resolveBoundTarget", () => {
     ).toThrow(/Branch binding required/i);
   });
 });
-

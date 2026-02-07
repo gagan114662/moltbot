@@ -1,13 +1,7 @@
 ---
 name: antigravity
 description: Google Antigravity (Cloud Code Assist) integration for coding, reviewing, and cloud-native development.
-metadata:
-  {
-    "openclaw": {
-      "emoji": "🚀",
-      "requires": { "providers": ["google-antigravity"] }
-    }
-  }
+metadata: { "openclaw": { "emoji": "🚀", "requires": { "providers": ["google-antigravity"] } } }
 ---
 
 # Google Antigravity
@@ -16,13 +10,13 @@ Google Cloud Code Assist integration for advanced coding workflows.
 
 ## Available Models
 
-| Model | Best For |
-|-------|----------|
+| Model                                         | Best For                                  |
+| --------------------------------------------- | ----------------------------------------- |
 | `google-antigravity/claude-opus-4-5-thinking` | Complex reasoning, architecture decisions |
-| `google-antigravity/claude-opus-4-5` | Code review, thorough analysis |
-| `google-antigravity/claude-sonnet-4-5` | Fast coding, quick iterations |
-| `google-antigravity/gemini-3` | Google-native workloads |
-| `google-antigravity/gemini-2.5-pro` | Large context, multimodal |
+| `google-antigravity/claude-opus-4-5`          | Code review, thorough analysis            |
+| `google-antigravity/claude-sonnet-4-5`        | Fast coding, quick iterations             |
+| `google-antigravity/gemini-3`                 | Google-native workloads                   |
+| `google-antigravity/gemini-2.5-pro`           | Large context, multimodal                 |
 
 ## Quick Start
 
@@ -76,6 +70,7 @@ When defining custom tools for Antigravity, follow these guardrails:
 ```
 
 **Rules:**
+
 - Use `enum` for string choices (not `anyOf`/`oneOf`)
 - Top-level must be `type: "object"` with `properties`
 - Avoid property named `format` (reserved keyword)
@@ -86,16 +81,19 @@ When defining custom tools for Antigravity, follow these guardrails:
 When working with GCP services:
 
 ### IAM & Security
+
 - Use service accounts with minimal permissions
 - Enable audit logging
 - Use VPC Service Controls for sensitive workloads
 
 ### Cost Optimization
+
 - Use committed use discounts for stable workloads
 - Enable auto-scaling with appropriate min/max
 - Use preemptible/spot VMs for batch processing
 
 ### Architecture
+
 - Use Cloud Run for stateless services
 - Use Cloud Functions for event-driven logic
 - Use Pub/Sub for async communication
@@ -104,6 +102,7 @@ When working with GCP services:
 ## Coding Patterns
 
 ### Cloud Run Service
+
 ```bash
 antigravity code "Create a Cloud Run service that:
 - Handles HTTP requests at /api/v1/users
@@ -113,6 +112,7 @@ antigravity code "Create a Cloud Run service that:
 ```
 
 ### Cloud Function
+
 ```bash
 antigravity code "Create a Cloud Function that:
 - Triggers on Pub/Sub message
@@ -122,6 +122,7 @@ antigravity code "Create a Cloud Function that:
 ```
 
 ### Terraform Infrastructure
+
 ```bash
 antigravity code "Generate Terraform for:
 - VPC with private subnets
@@ -133,6 +134,7 @@ antigravity code "Generate Terraform for:
 ## Review Patterns
 
 ### Security Review
+
 ```bash
 antigravity review "Check this code for:
 - IAM permission issues
@@ -143,6 +145,7 @@ antigravity review "Check this code for:
 ```
 
 ### Cost Review
+
 ```bash
 antigravity review "Analyze for cost optimization:
 - Resource sizing
@@ -154,6 +157,7 @@ antigravity review "Analyze for cost optimization:
 ## Usage Limits
 
 Antigravity uses Google Cloud project quotas:
+
 - Requests per minute: varies by model
 - Tokens per request: model-dependent
 - Check quotas: `gcloud alpha quotas info --service=cloudcode.googleapis.com`
@@ -161,6 +165,7 @@ Antigravity uses Google Cloud project quotas:
 ## Troubleshooting
 
 ### Auth Failed
+
 ```bash
 # Re-authenticate
 openclaw models auth login --provider google-antigravity
@@ -170,6 +175,7 @@ gcloud auth application-default print-access-token
 ```
 
 ### Quota Exceeded
+
 ```bash
 # Check quotas
 gcloud alpha quotas info --service=cloudcode.googleapis.com
@@ -179,6 +185,7 @@ gcloud alpha quotas update --service=cloudcode.googleapis.com
 ```
 
 ### Model Not Found
+
 ```bash
 # List available models
 openclaw models list --provider google-antigravity

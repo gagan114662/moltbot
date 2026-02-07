@@ -1,6 +1,5 @@
-import crypto from "node:crypto";
-
 import type { FeedbackLoopConfig } from "openclaw/plugin-sdk";
+import crypto from "node:crypto";
 import { callGateway, AGENT_LANE_SUBAGENT, readLatestAssistantReply } from "openclaw/plugin-sdk";
 
 export type AcceptanceCriteriaContext = {
@@ -23,7 +22,9 @@ export async function generateAcceptanceCriteria(
 
   // If acceptance criteria are already in config, use those
   if (config.acceptanceCriteria && config.acceptanceCriteria.length > 0) {
-    console.log(`[feedback-loop] Using ${config.acceptanceCriteria.length} pre-configured acceptance criteria`);
+    console.log(
+      `[feedback-loop] Using ${config.acceptanceCriteria.length} pre-configured acceptance criteria`,
+    );
     return config.acceptanceCriteria;
   }
 
@@ -49,7 +50,7 @@ export async function generateAcceptanceCriteria(
     });
 
     // Spawn criteria generator
-    const spawnResponse = await callGateway({
+    const spawnResponse = (await callGateway({
       method: "agent",
       params: {
         message: prompt,
@@ -62,17 +63,17 @@ export async function generateAcceptanceCriteria(
         label: "feedback-loop-criteria",
       },
       timeoutMs: 10_000,
-    }) as { runId?: string };
+    })) as { runId?: string };
 
     const runId = spawnResponse?.runId || stepIdem;
 
     // Wait for response (shorter timeout - this is just analysis)
     const waitTimeoutMs = 120_000; // 2 minutes max
-    const waitResponse = await callGateway({
+    const waitResponse = (await callGateway({
       method: "agent.wait",
       params: { runId, timeoutMs: waitTimeoutMs },
       timeoutMs: waitTimeoutMs + 5_000,
-    }) as { status?: string; error?: string };
+    })) as { status?: string; error?: string };
 
     if (waitResponse?.status !== "ok") {
       console.log(`[feedback-loop] Criteria generation failed, using defaults`);

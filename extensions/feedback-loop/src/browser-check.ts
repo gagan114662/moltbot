@@ -1,5 +1,16 @@
 import type { FeedbackLoopBrowserConfig } from "openclaw/plugin-sdk";
-import { browserOpenTab, browserSnapshot, browserStatus, browserTabs, browserConsoleMessages, browserPageErrors, browserRequests, browserNavigate, browserAct, browserScreenshotAction } from "openclaw/plugin-sdk";
+import {
+  browserOpenTab,
+  browserSnapshot,
+  browserStatus,
+  browserTabs,
+  browserConsoleMessages,
+  browserPageErrors,
+  browserRequests,
+  browserNavigate,
+  browserAct,
+  browserScreenshotAction,
+} from "openclaw/plugin-sdk";
 import type { TerminalStreamer } from "./terminal-stream.js";
 import { runVisualDiff, type VisualDiffResult } from "./visual-diff.js";
 
@@ -229,7 +240,9 @@ async function checkUrlWithBrowser(
               }
             } catch (vdErr) {
               // Visual diff failed, log but don't block
-              errors.push(`Visual diff failed: ${vdErr instanceof Error ? vdErr.message : String(vdErr)}`);
+              errors.push(
+                `Visual diff failed: ${vdErr instanceof Error ? vdErr.message : String(vdErr)}`,
+              );
             }
           }
         }

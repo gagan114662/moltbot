@@ -132,12 +132,15 @@ export function validateAntigravitySchema(schema: unknown): {
  * Build a safe tool schema for Antigravity
  */
 export function buildAntigravitySafeSchema(
-  properties: Record<string, {
-    type: "string" | "number" | "boolean" | "array" | "object";
-    description?: string;
-    choices?: string[]; // Will be converted to enum
-    optional?: boolean;
-  }>,
+  properties: Record<
+    string,
+    {
+      type: "string" | "number" | "boolean" | "array" | "object";
+      description?: string;
+      choices?: string[]; // Will be converted to enum
+      optional?: boolean;
+    }
+  >,
 ): AntigravityToolSchema {
   const schemaProperties: Record<string, AntigravityPropertySchema> = {};
   const required: string[] = [];
@@ -260,7 +263,8 @@ export async function checkAntigravityAvailable(): Promise<{
   } catch {
     return {
       available: false,
-      reason: "Antigravity not authenticated. Run: openclaw models auth login --provider google-antigravity",
+      reason:
+        "Antigravity not authenticated. Run: openclaw models auth login --provider google-antigravity",
     };
   }
 }

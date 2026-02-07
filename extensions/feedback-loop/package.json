@@ -1,17 +1,17 @@
 {
   "name": "@openclaw/feedback-loop",
   "version": "2026.1.29",
-  "type": "module",
   "description": "Iterative Coder↔Reviewer feedback loop plugin (Codex codes, Claude verifies)",
-  "openclaw": {
-    "extensions": [
-      "./index.ts"
-    ]
+  "type": "module",
+  "devDependencies": {
+    "openclaw": "workspace:*"
   },
   "peerDependencies": {
     "openclaw": ">=2026.1.26"
   },
-  "devDependencies": {
-    "openclaw": "workspace:*"
+  "openclaw": {
+    "extensions": [
+      "./index.ts"
+    ]
   }
 }

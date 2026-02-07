@@ -1,8 +1,8 @@
+import type { OpenClawPluginApi, OpenClawPluginToolContext } from "openclaw/plugin-sdk";
 import fs from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
 import { describe, expect, it } from "vitest";
-import type { OpenClawPluginApi, OpenClawPluginToolContext } from "openclaw/plugin-sdk";
 import { createLobsterTool } from "./lobster-tool.js";
 
 async function writeFakeLobsterScript(scriptBody: string, prefix = "openclaw-lobster-plugin-") {

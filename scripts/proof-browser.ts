@@ -55,13 +55,17 @@ async function run() {
   const appUrl = process.env.APP_URL || "http://localhost:3010/app";
   const requiredPath = process.env.PROOF_REQUIRE_PATH || "/app";
   const enforceEntryFlow = process.env.PROOF_ENFORCE_ENTRY_FLOW !== "0";
-  const entryMarkers = (process.env.PROOF_ENTRY_MARKERS ||
-    "build your learning journey|welcome to ai tutor|sign in to continue your learning journey|question 1 of|assessment mode")
+  const entryMarkers = (
+    process.env.PROOF_ENTRY_MARKERS ||
+    "build your learning journey|welcome to ai tutor|sign in to continue your learning journey|question 1 of|assessment mode"
+  )
     .split("|")
     .map((item) => item.trim().toLowerCase())
     .filter(Boolean);
   const outputDir = path.resolve(process.env.PROOF_OUT_DIR || `artifacts/proof/run-${Date.now()}`);
-  const stepFilePath = process.env.PROOF_STEPS_FILE ? path.resolve(process.env.PROOF_STEPS_FILE) : "";
+  const stepFilePath = process.env.PROOF_STEPS_FILE
+    ? path.resolve(process.env.PROOF_STEPS_FILE)
+    : "";
   const disallowComingSoon = process.env.ALLOW_COMING_SOON !== "1";
   const report: RunReport = {
     ok: false,
@@ -101,7 +105,10 @@ async function run() {
   const page = await context.newPage();
 
   const checkpoint = async (name: string, fullPage = true) => {
-    const file = path.join(screenshotsDir, `${String(report.checkpoints.length + 1).padStart(2, "0")}-${sanitizeLabel(name)}.png`);
+    const file = path.join(
+      screenshotsDir,
+      `${String(report.checkpoints.length + 1).padStart(2, "0")}-${sanitizeLabel(name)}.png`,
+    );
     await page.screenshot({ path: file, fullPage });
     report.checkpoints.push({ name, path: file });
   };
@@ -114,7 +121,9 @@ async function run() {
     const html = (await page.content()).toLowerCase();
     const currentUrl = page.url();
     if (requiredPath && !currentUrl.includes(requiredPath)) {
-      throw new Error(`Entry URL mismatch. Expected URL to include '${requiredPath}', got '${currentUrl}'`);
+      throw new Error(
+        `Entry URL mismatch. Expected URL to include '${requiredPath}', got '${currentUrl}'`,
+      );
     }
     if (disallowComingSoon && html.includes("coming soon")) {
       throw new Error(`Landing page contains 'Coming Soon' at ${appUrl}`);
@@ -132,7 +141,10 @@ async function run() {
       if (step.action === "waitFor") {
         await page.waitForSelector(step.selector, { timeout: step.timeoutMs ?? 20_000 });
       } else if (step.action === "waitForText") {
-        await page.getByText(step.text, { exact: false }).first().waitFor({ timeout: step.timeoutMs ?? 20_000 });
+        await page
+          .getByText(step.text, { exact: false })
+          .first()
+          .waitFor({ timeout: step.timeoutMs ?? 20_000 });
       } else if (step.action === "wait") {
         await page.waitForTimeout(step.ms);
       } else if (step.action === "fill") {

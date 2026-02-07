@@ -1,6 +1,5 @@
-import { spawn } from "node:child_process";
-
 import type { FeedbackLoopCommand } from "openclaw/plugin-sdk";
+import { spawn } from "node:child_process";
 import type { CheckResult } from "./orchestrator.js";
 import type { TerminalStreamer } from "./terminal-stream.js";
 

@@ -1,13 +1,9 @@
 import { describe, expect, it } from "vitest";
-
 import { validateMediaProbe } from "./browser-check.js";
 
 describe("validateMediaProbe", () => {
   it("fails when no media elements are found and required is true", () => {
-    const errors = validateMediaProbe(
-      { audio: [], video: [] },
-      { enabled: true, required: true },
-    );
+    const errors = validateMediaProbe({ audio: [], video: [] }, { enabled: true, required: true });
     expect(errors.some((error) => error.includes("No audio/video elements detected"))).toBe(true);
   });
 

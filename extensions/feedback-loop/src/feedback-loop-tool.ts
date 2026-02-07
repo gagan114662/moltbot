@@ -1,10 +1,8 @@
+import type { OpenClawPluginApi, AnyAgentTool, FeedbackLoopConfig } from "openclaw/plugin-sdk";
 import { Type } from "@sinclair/typebox";
 import fs from "node:fs";
 import path from "node:path";
-
-import type { OpenClawPluginApi, AnyAgentTool, FeedbackLoopConfig } from "openclaw/plugin-sdk";
 import { jsonResult, readStringParam } from "openclaw/plugin-sdk";
-
 import { runFeedbackLoop } from "./orchestrator.js";
 
 const FeedbackLoopToolSchema = Type.Object({

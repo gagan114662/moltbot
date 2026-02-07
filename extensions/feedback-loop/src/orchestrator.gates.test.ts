@@ -1,5 +1,4 @@
 import { describe, expect, it } from "vitest";
-
 import { applyHardApprovalGates, type ReviewResult } from "./orchestrator.js";
 
 const gates = {

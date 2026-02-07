@@ -1,5 +1,4 @@
 import { describe, expect, it } from "vitest";
-
 import { registerFeedbackLoopHooks } from "./hooks.js";
 
 describe("feedback loop hooks module", () => {

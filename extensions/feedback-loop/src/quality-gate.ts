@@ -56,10 +56,7 @@ const CODE_PATTERNS = {
 /**
  * Check code content for quality issues
  */
-export function checkCodeQuality(
-  content: string,
-  filePath?: string,
-): QualityCheckResult {
+export function checkCodeQuality(content: string, filePath?: string): QualityCheckResult {
   const issues: QualityIssue[] = [];
   const suggestions: string[] = [];
 
@@ -205,9 +202,7 @@ export function formatQualityReport(results: QualityCheckResult[]): string {
 export async function runPreCommitGate(
   changedFiles: string[],
 ): Promise<{ canCommit: boolean; report: string }> {
-  const codeFiles = changedFiles.filter((f) =>
-    /\.(ts|tsx|js|jsx|py|go|rs|java|kt|swift)$/.test(f),
-  );
+  const codeFiles = changedFiles.filter((f) => /\.(ts|tsx|js|jsx|py|go|rs|java|kt|swift)$/.test(f));
 
   const results: QualityCheckResult[] = [];
   for (const file of codeFiles) {

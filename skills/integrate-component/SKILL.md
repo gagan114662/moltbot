@@ -1,10 +1,7 @@
 ---
 name: integrate-component
 description: Integrate a React component into production app flow (NOT demo pages)
-metadata:
-  {
-    "openclaw": { "emoji": "🔌", "requires": { "anyBins": ["pnpm", "npm"] } },
-  }
+metadata: { "openclaw": { "emoji": "🔌", "requires": { "anyBins": ["pnpm", "npm"] } } }
 ---
 
 # Integrate Component
@@ -18,6 +15,7 @@ Properly integrate a React component into a production application - **NOT demo 
 ```
 
 Example:
+
 ```
 /integrate-component ScratchpadTeacher in /Users/gaganarora/clawd/aitutor-homework
 ```
@@ -26,7 +24,7 @@ Example:
 
 1. **Finds the component** in the project
 2. **Identifies integration points** - existing pages where the component belongs
-3. **Adds the component** to real production routes (NOT /demo/*)
+3. **Adds the component** to real production routes (NOT /demo/\*)
 4. **Updates imports and exports**
 5. **Runs build** to verify no errors
 6. **Runs tests** if they exist
@@ -34,12 +32,14 @@ Example:
 ## Rules
 
 ### NEVER DO:
+
 - Create `/demo/*` routes
 - Create standalone demo pages
 - Add new routes just for testing a component
 - Create `*Demo.tsx` files
 
 ### ALWAYS DO:
+
 - Find existing pages where the component fits
 - Add component to real user flows
 - Use existing UI library (Shadcn, MUI, etc.)
@@ -60,15 +60,17 @@ Before saying "done", verify:
 ## Example: ScratchpadTeacher in aitutor-homework
 
 **BAD** (what NOT to do):
+
 ```tsx
 // src/index.tsx - WRONG
 <Route path="/app/demo/scratchpad-teacher" component={ScratchpadTeacherDemo} />
 ```
 
 **GOOD** (proper integration):
+
 ```tsx
 // src/components/QuestionDisplay.tsx - RIGHT
-import { ScratchpadTeacher } from '@/components/scratchpad';
+import { ScratchpadTeacher } from "@/components/scratchpad";
 
 export function QuestionDisplay({ question, showSolution }) {
   return (
@@ -92,12 +94,14 @@ export function QuestionDisplay({ question, showSolution }) {
 ## Finding Integration Points
 
 Ask these questions:
+
 1. What user action triggers this component?
 2. What existing page handles that action?
 3. What state/context does the component need?
 4. Which existing components should contain it?
 
 For ScratchpadTeacher:
+
 - Triggered by: User wants to see step-by-step solution
 - Existing page: LessonPage, QuestionDisplay
 - State needed: Solution strokes data

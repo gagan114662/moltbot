@@ -3,7 +3,10 @@
     { "action": "waitForText", "text": "START FREE TRIAL", "timeoutMs": 20000 },
     { "action": "wait", "ms": 1500 },
     { "action": "screenshot", "label": "marketing-landing" },
-    { "action": "click", "selector": "button:has-text(\"START FREE TRIAL\"), a:has-text(\"START FREE TRIAL\")" },
+    {
+      "action": "click",
+      "selector": "button:has-text(\"START FREE TRIAL\"), a:has-text(\"START FREE TRIAL\")"
+    },
     { "action": "waitFor", "selector": "input[type=\"email\"]", "timeoutMs": 20000 },
     { "action": "wait", "ms": 1200 },
     { "action": "expectUrl", "includes": "/app/login" },

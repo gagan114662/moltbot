@@ -5,12 +5,7 @@
  * in isolated sandboxes with HTTP control and human-in-the-loop approval via messaging channels.
  */
 
-import type {
-  UniversalEvent,
-  ItemEventData,
-  ContentPart,
-} from "sandbox-agent";
-
+import type { UniversalEvent, ItemEventData, ContentPart } from "sandbox-agent";
 import { SandboxAgentManager } from "./manager.js";
 
 export interface SandboxAgentConfig {
@@ -56,7 +51,10 @@ interface PluginContext {
     name: string;
     description: string;
     usage: string;
-    handler: (args: string, message: { channelId: string; reply: (text: string) => Promise<void> }) => Promise<string>;
+    handler: (
+      args: string,
+      message: { channelId: string; reply: (text: string) => Promise<void> },
+    ) => Promise<string>;
   }) => void;
   registerSkill?: (skill: {
     name: string;
@@ -101,7 +99,10 @@ export const plugin = {
         name: "sandbox",
         description: "Run a coding task in an isolated sandbox",
         usage: "/sandbox <agent> <task>",
-        handler: async (args: string, message: { channelId: string; reply: (text: string) => Promise<void> }) => {
+        handler: async (
+          args: string,
+          message: { channelId: string; reply: (text: string) => Promise<void> },
+        ) => {
           const [agentName, ...taskParts] = args.split(" ");
           const task = taskParts.join(" ");
 
@@ -109,7 +110,10 @@ export const plugin = {
             return "Usage: /sandbox <agent> <task>\nAgents: claude, codex, opencode, amp";
           }
 
-          const agent = (agentName as "claude" | "codex" | "opencode" | "amp") || config.defaultAgent || "claude";
+          const agent =
+            (agentName as "claude" | "codex" | "opencode" | "amp") ||
+            config.defaultAgent ||
+            "claude";
 
           ctx.log(`Starting sandbox session with ${agent}...`);
           await message.reply(`Starting sandbox session with ${agent}...`);

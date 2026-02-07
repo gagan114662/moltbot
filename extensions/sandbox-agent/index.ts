@@ -1,24 +1,25 @@
 import type { OpenClawPluginApi } from "openclaw/plugin-sdk";
-
 import { SandboxAgentManager } from "./src/manager.js";
 
 // Global manager instance
 let manager: SandboxAgentManager | null = null;
 
 export default function register(api: OpenClawPluginApi) {
-  const pluginConfig = api.getPluginConfig?.() as {
-    defaultAgent?: "claude" | "codex" | "opencode" | "amp";
-    mode?: "embedded" | "remote";
-    serverUrl?: string;
-    token?: string;
-    port?: number;
-    workspaceDir?: string;
-    humanInTheLoop?: {
-      enabled?: boolean;
-      timeoutSeconds?: number;
-      autoApproveSafe?: boolean;
-    };
-  } | undefined;
+  const pluginConfig = api.getPluginConfig?.() as
+    | {
+        defaultAgent?: "claude" | "codex" | "opencode" | "amp";
+        mode?: "embedded" | "remote";
+        serverUrl?: string;
+        token?: string;
+        port?: number;
+        workspaceDir?: string;
+        humanInTheLoop?: {
+          enabled?: boolean;
+          timeoutSeconds?: number;
+          autoApproveSafe?: boolean;
+        };
+      }
+    | undefined;
 
   const config = pluginConfig ?? {};
 
@@ -35,7 +36,8 @@ export default function register(api: OpenClawPluginApi) {
   // Register a tool for running sandbox tasks
   api.registerTool({
     name: "sandbox_task",
-    description: "Run a coding task in an isolated sandbox environment using Claude Code, Codex, OpenCode, or Amp",
+    description:
+      "Run a coding task in an isolated sandbox environment using Claude Code, Codex, OpenCode, or Amp",
     parameters: {
       type: "object",
       properties: {
@@ -98,7 +100,8 @@ export default function register(api: OpenClawPluginApi) {
         return "Usage: /sandbox <agent> <task>\nAgents: claude, codex, opencode, amp";
       }
 
-      const agent = (agentName as "claude" | "codex" | "opencode" | "amp") || config.defaultAgent || "claude";
+      const agent =
+        (agentName as "claude" | "codex" | "opencode" | "amp") || config.defaultAgent || "claude";
 
       try {
         const result = await manager.runTask({

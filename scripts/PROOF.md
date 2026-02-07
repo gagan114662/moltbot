@@ -9,6 +9,7 @@ bash scripts/proof-run.sh fast
 ```
 
 Notes:
+
 - If `APP_URL` is not set, `proof-run.sh` auto-detects a live app from:
   - `http://localhost:3010/app`
   - `http://localhost:3000/app`
@@ -49,6 +50,7 @@ bash scripts/proof-run.sh fast
 ```
 
 Outputs:
+
 - `artifacts/proof/run-*/proof-report.json`
 - `artifacts/proof/run-*/video/*.webm`
 - `artifacts/proof/run-*/screenshots/*.png`

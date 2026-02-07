@@ -1,5 +1,4 @@
 import { describe, expect, it } from "vitest";
-
 import { parseReviewerResponse } from "./spawn-reviewer.js";
 
 describe("parseReviewerResponse", () => {

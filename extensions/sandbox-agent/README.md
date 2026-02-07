@@ -60,7 +60,7 @@ The extension registers a `sandbox-task` skill that agents can invoke:
 await invokeSkill("sandbox-task", {
   agent: "codex",
   task: "Refactor the authentication module to use JWT",
-  workingDirectory: "/path/to/project"
+  workingDirectory: "/path/to/project",
 });
 ```
 
@@ -73,7 +73,7 @@ const manager = new SandboxAgentManager({
   mode: "embedded",
   port: 2468,
   defaultAgent: "claude",
-  workspaceDir: "/path/to/workspace"
+  workspaceDir: "/path/to/workspace",
 });
 
 const result = await manager.runTask({
@@ -86,7 +86,7 @@ const result = await manager.runTask({
   onPermissionRequest: async (event) => {
     // Custom approval logic
     return { approved: true };
-  }
+  },
 });
 ```
 
@@ -108,19 +108,21 @@ Reply **yes** to approve or **no** to deny.
 ### Auto-Approve Safe Operations
 
 Set `autoApproveSafe: true` to automatically approve read-only operations:
+
 - `read_file`, `list_files`, `search_files`, `glob`, `grep`, `view_file`
 
 Dangerous operations always require explicit approval:
+
 - `write_file`, `delete_file`, `execute`, `bash`, `shell`, `rm`, `sudo`, `install`
 
 ## Supported Agents
 
-| Agent | Description |
-|-------|-------------|
-| `claude` | Claude Code (Anthropic) |
-| `codex` | OpenAI Codex |
-| `opencode` | OpenCode |
-| `amp` | Amp |
+| Agent      | Description             |
+| ---------- | ----------------------- |
+| `claude`   | Claude Code (Anthropic) |
+| `codex`    | OpenAI Codex            |
+| `opencode` | OpenCode                |
+| `amp`      | Amp                     |
 
 ## Remote Mode
 
@@ -135,6 +137,7 @@ Connect to a sandbox server running in the cloud:
 ```
 
 Compatible with:
+
 - E2B
 - Daytona
 - Vercel Sandboxes
