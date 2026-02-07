@@ -198,7 +198,7 @@ describe("runReplyAgent typing (heartbeat)", () => {
       const res = await run();
 
       expect(res).toMatchObject({
-        text: expect.stringContaining("Agent failed before reply"),
+        text: expect.stringContaining("could not complete this turn"),
       });
       expect(sessionStore.main).toBeDefined();
       await expect(fs.access(transcriptPath)).resolves.toBeUndefined();

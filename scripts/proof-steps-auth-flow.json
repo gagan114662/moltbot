@@ -1,0 +1,20 @@
+{
+  "steps": [
+    { "action": "waitForText", "text": "START FREE TRIAL", "timeoutMs": 20000 },
+    { "action": "wait", "ms": 1500 },
+    { "action": "screenshot", "label": "marketing-landing" },
+    { "action": "click", "selector": "button:has-text(\"START FREE TRIAL\"), a:has-text(\"START FREE TRIAL\")" },
+    { "action": "waitFor", "selector": "input[type=\"email\"]", "timeoutMs": 20000 },
+    { "action": "wait", "ms": 1200 },
+    { "action": "expectUrl", "includes": "/app/login" },
+    { "action": "expectText", "text": "WELCOME TO AI TUTOR" },
+    { "action": "screenshot", "label": "login-screen" },
+    { "action": "click", "selector": "button:has-text(\"SIGN UP\")" },
+    { "action": "waitForText", "text": "Full Name", "timeoutMs": 20000 },
+    { "action": "wait", "ms": 1200 },
+    { "action": "fill", "selector": "input[type=\"email\"]", "value": "qa_proof@example.com" },
+    { "action": "fill", "selector": "input[type=\"password\"]", "value": "Passw0rd!123" },
+    { "action": "wait", "ms": 1200 },
+    { "action": "screenshot", "label": "signup-form" }
+  ]
+}
