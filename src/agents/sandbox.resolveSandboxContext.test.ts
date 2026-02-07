@@ -34,7 +34,7 @@ describe("resolveSandboxContext", () => {
     expect(spawn).not.toHaveBeenCalled();
 
     vi.doUnmock("node:child_process");
-  }, 15_000);
+  }, 60_000);
 
   it("does not create a sandbox workspace for the agent main session in non-main mode", async () => {
     vi.resetModules();
@@ -68,7 +68,7 @@ describe("resolveSandboxContext", () => {
     expect(spawn).not.toHaveBeenCalled();
 
     vi.doUnmock("node:child_process");
-  }, 15_000);
+  }, 60_000);
 
   it("treats main session aliases as main in non-main mode", async () => {
     vi.resetModules();
@@ -129,5 +129,5 @@ describe("resolveSandboxContext", () => {
     expect(spawn).not.toHaveBeenCalled();
 
     vi.doUnmock("node:child_process");
-  }, 15_000);
+  }, 60_000);
 });

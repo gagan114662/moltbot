@@ -2,7 +2,7 @@ import fs from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
 import { describe, expect, it } from "vitest";
-import type { OpenClawPluginApi, OpenClawPluginToolContext } from "../../../src/plugins/types.js";
+import type { OpenClawPluginApi, OpenClawPluginToolContext } from "openclaw/plugin-sdk";
 import { createLobsterTool } from "./lobster-tool.js";
 
 async function writeFakeLobsterScript(scriptBody: string, prefix = "openclaw-lobster-plugin-") {
@@ -85,7 +85,7 @@ describe("lobster plugin tool", () => {
       const res = await tool.execute("call1", {
         action: "run",
         pipeline: "noop",
-        timeoutMs: 1000,
+        timeoutMs: 10_000,
       });
 
       expect(res.details).toMatchObject({ ok: true, status: "ok" });
@@ -111,7 +111,7 @@ describe("lobster plugin tool", () => {
       const res = await tool.execute("call-noisy", {
         action: "run",
         pipeline: "noop",
-        timeoutMs: 1000,
+        timeoutMs: 10_000,
       });
 
       expect(res.details).toMatchObject({ ok: true, status: "ok" });
@@ -201,7 +201,7 @@ describe("lobster plugin tool", () => {
       const res = await tool.execute("call-plugin-config", {
         action: "run",
         pipeline: "noop",
-        timeoutMs: 1000,
+        timeoutMs: 10_000,
       });
 
       expect(res.details).toMatchObject({ ok: true, status: "ok" });

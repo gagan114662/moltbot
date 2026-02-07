@@ -171,7 +171,6 @@ describe("loader", () => {
       expect(count).toBe(0);
       expect(consoleError).toHaveBeenCalledWith(
         expect.stringContaining("Failed to load hook handler"),
-        expect.any(String),
       );
 
       consoleError.mockRestore();
