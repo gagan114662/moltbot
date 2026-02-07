@@ -217,7 +217,12 @@ async function runGatewayCommand(opts: GatewayRunOpts) {
       '"gateway.remote.token" is for remote CLI calls; it does not enable local gateway auth.',
     );
   }
-  if (resolvedAuthMode === "token" && !hasToken && !resolvedAuth.allowTailscale) {
+  if (
+    resolvedAuthMode === "token" &&
+    !hasToken &&
+    !resolvedAuth.allowTailscale &&
+    !resolvedAuth.allowLoopbackBypass
+  ) {
     defaultRuntime.error(
       [
         "Gateway auth is set to token, but no token is configured.",

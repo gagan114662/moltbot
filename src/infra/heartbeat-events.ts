@@ -2,7 +2,7 @@ export type HeartbeatIndicatorType = "ok" | "alert" | "error";
 
 export type HeartbeatEventPayload = {
   ts: number;
-  status: "sent" | "ok-empty" | "ok-token" | "skipped" | "failed";
+  status: "sent" | "ok-empty" | "ok-token" | "skipped" | "failed" | "goal-work";
   to?: string;
   accountId?: string;
   preview?: string;
@@ -23,6 +23,7 @@ export function resolveIndicatorType(
   switch (status) {
     case "ok-empty":
     case "ok-token":
+    case "goal-work":
       return "ok";
     case "sent":
       return "alert";

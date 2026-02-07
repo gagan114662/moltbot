@@ -10,6 +10,8 @@ export type ResolvedGatewayAuth = {
   token?: string;
   password?: string;
   allowTailscale: boolean;
+  /** Allow loopback connections without auth (for local dev). */
+  allowLoopbackBypass?: boolean;
 };
 
 export type GatewayAuthResult = {
@@ -213,17 +215,22 @@ export function resolveGatewayAuth(params: {
   const mode: ResolvedGatewayAuth["mode"] = authConfig.mode ?? (password ? "password" : "token");
   const allowTailscale =
     authConfig.allowTailscale ?? (params.tailscaleMode === "serve" && mode !== "password");
+  // Allow loopback bypass via config or OPENCLAW_ALLOW_LOOPBACK_BYPASS=1
+  const allowLoopbackBypass =
+    (authConfig as { allowLoopbackBypass?: boolean }).allowLoopbackBypass ??
+    env.OPENCLAW_ALLOW_LOOPBACK_BYPASS === "1";
   return {
     mode,
     token,
     password,
     allowTailscale,
+    allowLoopbackBypass,
   };
 }
 
 export function assertGatewayAuthConfigured(auth: ResolvedGatewayAuth): void {
   if (auth.mode === "token" && !auth.token) {
-    if (auth.allowTailscale) {
+    if (auth.allowTailscale || auth.allowLoopbackBypass) {
       return;
     }
     throw new Error(
@@ -245,6 +252,11 @@ export async function authorizeGatewayConnect(params: {
   const { auth, connectAuth, req, trustedProxies } = params;
   const tailscaleWhois = params.tailscaleWhois ?? readTailscaleWhoisIdentity;
   const localDirect = isLocalDirectRequest(req, trustedProxies);
+
+  // Allow loopback connections without auth when explicitly enabled (local dev)
+  if (auth.allowLoopbackBypass && localDirect) {
+    return { ok: true, method: "token" };
+  }
 
   if (auth.allowTailscale && !localDirect) {
     const tailscaleCheck = await resolveVerifiedTailscaleUser({

@@ -13,6 +13,7 @@ import { formatError } from "../server-utils.js";
 import { logWs } from "../ws-log.js";
 import { getHealthVersion, getPresenceVersion, incrementPresenceVersion } from "./health-state.js";
 import { attachGatewayWsMessageHandler } from "./ws-connection/message-handler.js";
+import { getGlobalRateLimiterRegistry } from "./ws-connection/rate-limiter.js";
 
 type SubsystemLogger = ReturnType<typeof createSubsystemLogger>;
 
@@ -151,6 +152,7 @@ export function attachGatewayWsConnectionHandler(params: {
       );
 
     socket.once("close", (code, reason) => {
+      getGlobalRateLimiterRegistry().remove(connId);
       const durationMs = Date.now() - openedAt;
       const closeContext = {
         cause: closeCause,

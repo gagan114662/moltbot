@@ -170,6 +170,64 @@ export const AgentDefaultsSchema = z
       })
       .strict()
       .optional(),
+    council: z
+      .object({
+        enabled: z.boolean().optional(),
+        members: z
+          .array(
+            z
+              .object({
+                id: z.string(),
+                model: z.string(),
+                role: z.string().optional(),
+                systemPrompt: z.string().optional(),
+              })
+              .strict(),
+          )
+          .optional(),
+        chair: z.string().optional(),
+        synthesisPrompt: z.string().optional(),
+        memberTimeoutMs: z.number().int().positive().optional(),
+        requireAllResponses: z.boolean().optional(),
+        autoTrigger: z.boolean().optional(),
+        complexityThreshold: z.number().min(0).max(1).optional(),
+      })
+      .strict()
+      .optional(),
+    goals: z
+      .object({
+        enabled: z.boolean().optional(),
+        workInterval: z.string().optional(),
+        maxWorkDuration: z.string().optional(),
+        model: z.string().optional(),
+        quietHours: z
+          .object({
+            start: z.string(),
+            end: z.string(),
+            timezone: z.string().optional(),
+          })
+          .strict()
+          .optional(),
+        notifications: z
+          .object({
+            onComplete: z.boolean().optional(),
+            onBlocked: z.boolean().optional(),
+            batchNonUrgent: z.boolean().optional(),
+            batchIntervalMinutes: z.number().int().positive().optional(),
+          })
+          .strict()
+          .optional(),
+        videoProof: z
+          .object({
+            enabled: z.boolean().optional(),
+            mode: z.enum(["fast", "full"]).optional(),
+            appUrl: z.string().optional(),
+          })
+          .strict()
+          .optional(),
+      })
+      .strict()
+      .optional(),
     feedbackLoop: z
       .object({
         enabled: z.boolean().optional(),
@@ -200,6 +258,13 @@ export const AgentDefaultsSchema = z
             browserUrl: z.string().optional(),
             profile: z.string().optional(),
             customCheck: z.string().optional(),
+            visualDiff: z
+              .object({
+                baselineDir: z.string(),
+                threshold: z.number().min(0).max(100).optional(),
+                autoCreateBaseline: z.boolean().optional(),
+              })
+              .optional(),
             media: z
               .object({
                 enabled: z.boolean().optional(),
@@ -250,6 +315,8 @@ export const AgentDefaultsSchema = z
             requireStructuredFeedback: z.boolean().optional(),
             minimumUIScore: z.number().optional(),
             minimumCoverageScenarios: z.number().optional(),
+            useCodeReviewExpertRubric: z.boolean().optional(),
+            minimumAverageRubricScore: z.number().min(0).max(5).optional(),
           })
           .optional(),
         regression: z
@@ -308,6 +375,9 @@ export const AgentDefaultsSchema = z
             requireGeminiLiveHealthy: z.boolean().optional(),
             requireNoToolCallDuplication: z.boolean().optional(),
             requireConsoleBudget: z.boolean().optional(),
+            requireVideoProof: z.boolean().optional(),
+            videoProofMode: z.enum(["fast", "full"]).optional(),
+            videoProofAppUrl: z.string().optional(),
           })
           .strict()
           .optional(),
@@ -337,18 +407,6 @@ export const AgentDefaultsSchema = z
       .optional(),
     resilience: z
       .object({
-        slo: z
-          .object({
-            target: z.string().optional(),
-          })
-          .strict()
-          .optional(),
-        failover: z
-          .object({
-            mode: z.union([z.literal("active-active"), z.literal("active-passive")]).optional(),
-          })
-          .strict()
-          .optional(),
         providers: z
           .object({
             allowlist: z.array(z.string()).optional(),
@@ -369,36 +427,9 @@ export const AgentDefaultsSchema = z
           })
           .strict()
           .optional(),
-        storage: z
-          .object({
-            sessions: z.number().int().positive().optional(),
-            memory: z.number().int().positive().optional(),
-            artifacts: z.number().int().positive().optional(),
-          })
-          .strict()
-          .optional(),
-        proof: z
-          .object({
-            video: z.boolean().optional(),
-            artifacts: z.boolean().optional(),
-          })
-          .strict()
-          .optional(),
         breakGlass: z
           .object({
             model: z.string().optional(),
-          })
-          .strict()
-          .optional(),
-      })
-      .strict()
-      .optional(),
-    alerts: z
-      .object({
-        paging: z
-          .object({
-            enabled: z.boolean().optional(),
-            escalationMinutes: z.array(z.number().int().positive()).optional(),
           })
           .strict()
           .optional(),

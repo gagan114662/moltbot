@@ -1,5 +1,4 @@
-import type { OpenClawPluginApi } from "../../../src/plugins/types.js";
-import type { FeedbackLoopConfig } from "../../../src/config/types.agent-defaults.js";
+import type { OpenClawPluginApi, FeedbackLoopConfig } from "openclaw/plugin-sdk";
 
 import { loadLearnedRules } from "./self-correction.js";
 import { checkCodeQuality, formatQualityReport, EditTracker } from "./quality-gate.js";

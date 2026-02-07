@@ -1,4 +1,4 @@
-import type { OpenClawPluginApi } from "../../src/plugins/types.js";
+import type { OpenClawPluginApi } from "openclaw/plugin-sdk";
 import { createLobsterTool } from "./src/lobster-tool.js";
 
 export default function register(api: OpenClawPluginApi) {

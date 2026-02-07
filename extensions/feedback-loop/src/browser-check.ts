@@ -1,18 +1,7 @@
-import type { FeedbackLoopBrowserConfig } from "../../../src/config/types.agent-defaults.js";
+import type { FeedbackLoopBrowserConfig } from "openclaw/plugin-sdk";
+import { browserOpenTab, browserSnapshot, browserStatus, browserTabs, browserConsoleMessages, browserPageErrors, browserRequests, browserNavigate, browserAct, browserScreenshotAction } from "openclaw/plugin-sdk";
 import type { TerminalStreamer } from "./terminal-stream.js";
-
-// Import browser client functions
-import { browserOpenTab, browserSnapshot, browserStatus, browserTabs } from "../../../src/browser/client.js";
-import {
-  browserConsoleMessages,
-  browserPageErrors,
-  browserRequests,
-} from "../../../src/browser/client-actions-observe.js";
-import {
-  browserNavigate,
-  browserAct,
-  browserScreenshotAction,
-} from "../../../src/browser/client-actions-core.js";
+import { runVisualDiff, type VisualDiffResult } from "./visual-diff.js";
 
 export type BrowserCheckResult = {
   url: string;
@@ -21,8 +10,10 @@ export type BrowserCheckResult = {
   consoleErrors?: string[];
   networkErrors?: string[];
   pageErrors?: string[];
+  accessibilityErrors?: string[];
   screenshotPath?: string;
   snapshot?: string;
+  visualDiff?: VisualDiffResult;
 };
 
 export type BrowserCheckSummary = {
@@ -213,6 +204,7 @@ async function checkUrlWithBrowser(
 
     // Take screenshot as proof of verification
     let screenshotPath: string | undefined;
+    let visualDiffResult: VisualDiffResult | undefined;
     if (config.captureScreenshots !== false) {
       try {
         const screenshotResult = await browserScreenshotAction(browserBaseUrl, {
@@ -223,6 +215,23 @@ async function checkUrlWithBrowser(
         });
         if (screenshotResult.path) {
           screenshotPath = screenshotResult.path;
+
+          // Run visual diff if baseline directory is configured
+          if (config.visualDiff?.baselineDir) {
+            try {
+              visualDiffResult = await runVisualDiff(url, screenshotResult.path, {
+                baselineDir: config.visualDiff.baselineDir,
+                threshold: config.visualDiff.threshold,
+                autoCreateBaseline: config.visualDiff.autoCreateBaseline,
+              });
+              if (!visualDiffResult.passed) {
+                errors.push(`Visual regression: ${visualDiffResult.message}`);
+              }
+            } catch (vdErr) {
+              // Visual diff failed, log but don't block
+              errors.push(`Visual diff failed: ${vdErr instanceof Error ? vdErr.message : String(vdErr)}`);
+            }
+          }
         }
       } catch {
         // Screenshot failed, not critical
@@ -269,12 +278,31 @@ async function checkUrlWithBrowser(
       }
     }
 
+    // Run accessibility checks
+    const accessibilityErrors: string[] = [];
+    try {
+      const a11yResult = await browserAct(
+        browserBaseUrl,
+        {
+          kind: "evaluate",
+          targetId,
+          fn: ACCESSIBILITY_CHECK_SCRIPT,
+        },
+        { profile },
+      );
+      const a11yIssues = parseAccessibilityResult(a11yResult.result);
+      accessibilityErrors.push(...a11yIssues);
+    } catch {
+      // Accessibility check failed, not critical
+    }
+
     // Compile all errors
     const allErrors = [
       ...errors,
       ...consoleErrors.map((e) => `Console: ${e}`),
       ...pageErrors.map((e) => `Page error: ${e}`),
       ...networkErrors.map((e) => `Network: ${e}`),
+      ...accessibilityErrors.map((e) => `Accessibility: ${e}`),
     ];
 
     return {
@@ -284,8 +312,10 @@ async function checkUrlWithBrowser(
       consoleErrors: consoleErrors.length > 0 ? consoleErrors : undefined,
       networkErrors: networkErrors.length > 0 ? networkErrors : undefined,
       pageErrors: pageErrors.length > 0 ? pageErrors : undefined,
+      accessibilityErrors: accessibilityErrors.length > 0 ? accessibilityErrors : undefined,
       snapshot,
       screenshotPath,
+      visualDiff: visualDiffResult,
     };
   } catch (err) {
     const error = err instanceof Error ? err.message : String(err);
@@ -453,6 +483,107 @@ async function runHttpFallbackChecks(
     errors: allErrors,
     results,
   };
+}
+
+/**
+ * Lightweight accessibility check script.
+ * Catches common WCAG violations that humans notice immediately.
+ */
+const ACCESSIBILITY_CHECK_SCRIPT = `() => {
+  const issues = [];
+
+  // Check images without alt text
+  const imagesWithoutAlt = document.querySelectorAll('img:not([alt]), img[alt=""]');
+  if (imagesWithoutAlt.length > 0) {
+    issues.push('Images without alt text: ' + imagesWithoutAlt.length);
+  }
+
+  // Check form inputs without labels
+  const inputs = document.querySelectorAll('input:not([type="hidden"]):not([type="submit"]):not([type="button"]), textarea, select');
+  for (const input of inputs) {
+    const id = input.id;
+    const hasLabel = id && document.querySelector('label[for="' + id + '"]');
+    const hasAriaLabel = input.getAttribute('aria-label') || input.getAttribute('aria-labelledby');
+    const hasPlaceholder = input.getAttribute('placeholder');
+    const wrappedInLabel = input.closest('label');
+    if (!hasLabel && !hasAriaLabel && !wrappedInLabel) {
+      const identifier = id || input.name || input.type || 'input';
+      issues.push('Form input without label: ' + identifier + (hasPlaceholder ? ' (has placeholder but not accessible)' : ''));
+    }
+  }
+
+  // Check buttons without accessible text
+  const buttons = document.querySelectorAll('button, [role="button"]');
+  for (const btn of buttons) {
+    const hasText = btn.textContent?.trim();
+    const hasAriaLabel = btn.getAttribute('aria-label');
+    const hasTitle = btn.getAttribute('title');
+    if (!hasText && !hasAriaLabel && !hasTitle) {
+      issues.push('Button without accessible text');
+    }
+  }
+
+  // Check links without href or with empty text
+  const links = document.querySelectorAll('a');
+  for (const link of links) {
+    if (!link.href && !link.getAttribute('role')) {
+      issues.push('Link without href attribute');
+    }
+    const hasText = link.textContent?.trim();
+    const hasAriaLabel = link.getAttribute('aria-label');
+    if (!hasText && !hasAriaLabel) {
+      const hasImage = link.querySelector('img[alt]');
+      if (!hasImage) {
+        issues.push('Link without accessible text');
+      }
+    }
+  }
+
+  // Check heading hierarchy (h1 should come before h2, etc.)
+  const headings = document.querySelectorAll('h1, h2, h3, h4, h5, h6');
+  let lastLevel = 0;
+  for (const heading of headings) {
+    const level = parseInt(heading.tagName[1], 10);
+    if (level > lastLevel + 1 && lastLevel > 0) {
+      issues.push('Heading hierarchy skipped: h' + lastLevel + ' to h' + level);
+      break; // Only report first violation
+    }
+    lastLevel = level;
+  }
+
+  // Check for multiple h1 tags
+  const h1Count = document.querySelectorAll('h1').length;
+  if (h1Count > 1) {
+    issues.push('Multiple h1 tags found: ' + h1Count + ' (should be 1 per page)');
+  }
+
+  // Check interactive elements without focus indicators (basic check)
+  const focusables = document.querySelectorAll('a, button, input, select, textarea, [tabindex]');
+  let missingFocusStyle = 0;
+  for (const el of Array.from(focusables).slice(0, 10)) { // Sample first 10
+    const styles = window.getComputedStyle(el);
+    const outlineStyle = styles.outlineStyle;
+    const outlineWidth = styles.outlineWidth;
+    // If outline is none and no box-shadow, might be missing focus indicator
+    if (outlineStyle === 'none' && outlineWidth === '0px') {
+      const boxShadow = styles.boxShadow;
+      if (boxShadow === 'none') {
+        missingFocusStyle++;
+      }
+    }
+  }
+  if (missingFocusStyle > 3) {
+    issues.push('Possible missing focus styles on interactive elements');
+  }
+
+  return issues;
+}`;
+
+function parseAccessibilityResult(value: unknown): string[] {
+  if (!Array.isArray(value)) {
+    return [];
+  }
+  return value.filter((item): item is string => typeof item === "string");
 }
 
 /**

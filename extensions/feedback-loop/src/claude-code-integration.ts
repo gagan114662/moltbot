@@ -12,7 +12,7 @@
  */
 
 import crypto from "node:crypto";
-import type { FeedbackLoopConfig } from "../../../src/config/types.agent-defaults.js";
+import type { FeedbackLoopConfig } from "openclaw/plugin-sdk";
 
 // ============================================
 // SUBAGENT TYPES (matching Claude Code's Task tool)

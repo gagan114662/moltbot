@@ -1,4 +1,4 @@
-import type { OpenClawPluginApi } from "../../src/plugins/types.js";
+import type { OpenClawPluginApi } from "openclaw/plugin-sdk";
 
 import { createFeedbackLoopTool } from "./src/feedback-loop-tool.js";
 import { registerFeedbackLoopHooks } from "./src/hooks.js";

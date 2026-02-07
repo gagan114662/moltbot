@@ -80,42 +80,41 @@ function hydrateInboundMessage(msg: SerializableInboundMessage): WebInboundMessa
     },
     sendMedia: async (payload: AnyMessageContent) => {
       const { listener } = requireActiveWebListener(msg.accountId);
-      if (payload.image instanceof Buffer) {
-        await listener.sendMessage(
-          msg.from,
-          payload.caption ?? "",
-          payload.image,
-          payload.mimetype ?? "image/png",
-          { accountId: msg.accountId },
-        );
+      const caption =
+        "caption" in payload && typeof payload.caption === "string" ? payload.caption : "";
+      const mimetype =
+        "mimetype" in payload && typeof payload.mimetype === "string"
+          ? payload.mimetype
+          : undefined;
+      if ("image" in payload && payload.image instanceof Buffer) {
+        await listener.sendMessage(msg.from, caption, payload.image, mimetype ?? "image/png", {
+          accountId: msg.accountId,
+        });
         return;
       }
-      if (payload.video instanceof Buffer) {
-        await listener.sendMessage(
-          msg.from,
-          payload.caption ?? "",
-          payload.video,
-          payload.mimetype ?? "video/mp4",
-          { accountId: msg.accountId, ...(payload.gifPlayback ? { gifPlayback: true } : {}) },
-        );
+      if ("video" in payload && payload.video instanceof Buffer) {
+        const gifPlayback =
+          "gifPlayback" in payload && typeof payload.gifPlayback === "boolean"
+            ? payload.gifPlayback
+            : false;
+        await listener.sendMessage(msg.from, caption, payload.video, mimetype ?? "video/mp4", {
+          accountId: msg.accountId,
+          ...(gifPlayback ? { gifPlayback: true } : {}),
+        });
         return;
       }
-      if (payload.audio instanceof Buffer) {
-        await listener.sendMessage(
-          msg.from,
-          payload.caption ?? "",
-          payload.audio,
-          payload.mimetype ?? "audio/ogg",
-          { accountId: msg.accountId },
-        );
+      if ("audio" in payload && payload.audio instanceof Buffer) {
+        await listener.sendMessage(msg.from, caption, payload.audio, mimetype ?? "audio/ogg", {
+          accountId: msg.accountId,
+        });
         return;
       }
-      if (payload.document instanceof Buffer) {
+      if ("document" in payload && payload.document instanceof Buffer) {
         await listener.sendMessage(
           msg.from,
-          payload.caption ?? "",
+          caption,
           payload.document,
-          payload.mimetype ?? "application/octet-stream",
+          mimetype ?? "application/octet-stream",
           { accountId: msg.accountId },
         );
         return;

@@ -198,6 +198,8 @@ export type AgentDefaultsConfig = {
      */
     includeReasoning?: boolean;
   };
+  /** Autonomous goal-driven work (works toward GOALS.md objectives during heartbeat intervals). */
+  goals?: GoalWorkConfig;
   /** Max concurrent agent runs across all conversations. Default: 1 (sequential). */
   maxConcurrent?: number;
   /** Sub-agent defaults (spawned via sessions_spawn). */
@@ -213,10 +215,10 @@ export type AgentDefaultsConfig = {
   };
   /** Feedback loop: Coder↔Reviewer iterative workflow (Codex codes, Claude verifies). */
   feedbackLoop?: FeedbackLoopConfig;
+  /** Council mode: Multi-LLM deliberation with chair synthesis. */
+  council?: CouncilConfig;
   /** Reliability and failover controls for autonomous execution. */
   resilience?: ResilienceConfig;
-  /** Paging/escalation policy for reliability incidents. */
-  alerts?: AlertsConfig;
   /** Optional sandbox settings for non-main sessions. */
   sandbox?: {
     /** Enable sandboxing for sessions. */
@@ -294,6 +296,15 @@ export type FeedbackLoopBrowserConfig = {
   profile?: string;
   /** Custom JS function to evaluate - return false to fail check */
   customCheck?: string;
+  /** Visual diff / regression testing configuration */
+  visualDiff?: {
+    /** Directory to store baseline screenshots */
+    baselineDir: string;
+    /** Maximum allowed diff percentage (0-100). Default: 5 */
+    threshold?: number;
+    /** Whether to auto-update baselines when none exist. Default: true */
+    autoCreateBaseline?: boolean;
+  };
   /** Audio/video verification settings for media-heavy features. */
   media?: {
     /** Enable media checks (default: false). */
@@ -371,6 +382,10 @@ export type FeedbackLoopReviewConfig = {
   requireStructuredFeedback?: boolean;
   minimumUIScore?: number;
   minimumCoverageScenarios?: number;
+  /** Apply code-review-expert style rubric in reviewer prompts (default: true). */
+  useCodeReviewExpertRubric?: boolean;
+  /** Minimum average reviewer rubric score required for approval (default: 4.0). */
+  minimumAverageRubricScore?: number;
 };
 
 export type FeedbackLoopRegressionConfig = {
@@ -448,6 +463,12 @@ export type FeedbackLoopGatesConfig = {
   requireNoToolCallDuplication?: boolean;
   /** Require console warning/error budget checks to pass. */
   requireConsoleBudget?: boolean;
+  /** Require video proof capture before final approval (default: false). */
+  requireVideoProof?: boolean;
+  /** Video proof mode: "fast" (2+ sec, 2+ checkpoints) or "full" (8+ sec, 5+ checkpoints). */
+  videoProofMode?: "fast" | "full";
+  /** App URL for video proof capture (auto-detected if not set). */
+  videoProofAppUrl?: string;
 };
 
 export type FeedbackLoopConfig = {
@@ -488,13 +509,6 @@ export type ResilienceQueueRetryConfig = {
 };
 
 export type ResilienceConfig = {
-  /** Availability target (e.g. "99.99"). */
-  slo?: {
-    target?: string;
-  };
-  failover?: {
-    mode?: "active-active" | "active-passive";
-  };
   providers?: {
     /** Strictly allowed provider/model keys for runtime routing. */
     allowlist?: string[];
@@ -504,24 +518,95 @@ export type ResilienceConfig = {
   cooldown?: {
     queueRetry?: ResilienceQueueRetryConfig;
   };
-  storage?: {
-    sessions?: number;
-    memory?: number;
-    artifacts?: number;
-  };
-  proof?: {
-    video?: boolean;
-    artifacts?: boolean;
-  };
   /** Emergency model used when normal model selection is unavailable. */
   breakGlass?: {
     model?: string;
   };
 };
 
-export type AlertsConfig = {
-  paging?: {
+// ============================================
+// COUNCIL MODE - Multi-LLM Swarm with Chair Synthesis
+// ============================================
+
+/** Council member configuration */
+export type CouncilMemberConfig = {
+  /** Unique identifier for this member (e.g., "claude", "gpt", "gemini") */
+  id: string;
+  /** Model to use (provider/model format, e.g., "anthropic/claude-opus-4-5") */
+  model: string;
+  /** Role/perspective for this member (e.g., "analytical", "creative", "devil's advocate") */
+  role?: string;
+  /** Optional custom system prompt for this member */
+  systemPrompt?: string;
+};
+
+/** Council mode configuration */
+export type CouncilConfig = {
+  /** Enable council mode (default: false) */
+  enabled?: boolean;
+  /** Council members (diverse models with different perspectives) */
+  members?: CouncilMemberConfig[];
+  /** Chair model for synthesis (default: anthropic/claude-opus-4-5) */
+  chair?: string;
+  /** Custom synthesis prompt for the chair */
+  synthesisPrompt?: string;
+  /** Timeout per member in milliseconds (default: 60000) */
+  memberTimeoutMs?: number;
+  /** Require all members to respond before synthesis (default: false) */
+  requireAllResponses?: boolean;
+  /** Auto-trigger council for complex queries (default: false) */
+  autoTrigger?: boolean;
+  /** Complexity threshold for auto-trigger (0-1, default: 0.8) */
+  complexityThreshold?: number;
+};
+
+// ============================================
+// AUTONOMOUS GOAL-DRIVEN WORK
+// ============================================
+
+/** Quiet hours configuration for goal work */
+export type GoalQuietHoursConfig = {
+  /** Start time (24h format, HH:MM) */
+  start: string;
+  /** End time (24h format, HH:MM) */
+  end: string;
+  /** Timezone ("user", "local", or IANA TZ id) */
+  timezone?: string;
+};
+
+/** Notification configuration for goal work */
+export type GoalNotificationConfig = {
+  /** Notify immediately when a goal is completed (default: true) */
+  onComplete?: boolean;
+  /** Notify immediately when a goal is blocked (default: true) */
+  onBlocked?: boolean;
+  /** Batch non-urgent progress updates (default: true) */
+  batchNonUrgent?: boolean;
+  /** Interval for batched notifications in minutes (default: 60) */
+  batchIntervalMinutes?: number;
+};
+
+/** Autonomous goal-driven work configuration */
+export type GoalWorkConfig = {
+  /** Enable autonomous goal-driven work (default: false) */
+  enabled?: boolean;
+  /** How often to work on goals (duration string, default: 30m) */
+  workInterval?: string;
+  /** Max time per goal work session (duration string, default: 10m) */
+  maxWorkDuration?: string;
+  /** Model for goal work (defaults to heartbeat model) */
+  model?: string;
+  /** Quiet hours for goal work (no work during these hours) */
+  quietHours?: GoalQuietHoursConfig;
+  /** Notification settings for goal events */
+  notifications?: GoalNotificationConfig;
+  /** Video proof settings */
+  videoProof?: {
+    /** Capture video proof after each goal work session (default: false) */
     enabled?: boolean;
-    escalationMinutes?: number[];
+    /** Video proof mode: "fast" (2+ sec) or "full" (8+ sec) */
+    mode?: "fast" | "full";
+    /** App URL to test (auto-detected if not set) */
+    appUrl?: string;
   };
 };

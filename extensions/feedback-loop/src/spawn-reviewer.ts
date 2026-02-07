@@ -1,15 +1,7 @@
 import crypto from "node:crypto";
 
-import type {
-  FeedbackLoopConfig,
-  FeedbackLoopGatesConfig,
-} from "../../../src/config/types.agent-defaults.js";
-import type { OpenClawConfig } from "../../../src/config/config.js";
-import { callGateway } from "../../../src/gateway/call.js";
-import { AGENT_LANE_SUBAGENT } from "../../../src/agents/lanes.js";
-import { readLatestAssistantReply } from "../../../src/agents/tools/agent-step.js";
-import { runWithModelFallback } from "../../../src/agents/model-fallback.js";
-import { parseModelRef } from "../../../src/agents/model-selection.js";
+import type { FeedbackLoopConfig, FeedbackLoopGatesConfig, FeedbackLoopReviewConfig, OpenClawConfig } from "openclaw/plugin-sdk";
+import { callGateway, AGENT_LANE_SUBAGENT, readLatestAssistantReply, runWithModelFallback, parseModelRef } from "openclaw/plugin-sdk";
 
 import type { ReviewResult, CheckResult } from "./orchestrator.js";
 
@@ -116,6 +108,7 @@ async function spawnReviewerWithModel(
     planContext: opts.planContext,
     projectContext: opts.projectContext,
     workspaceDir,
+    reviewConfig: opts.config.review,
   });
 
   const childSessionKey = `agent:${agentId}:reviewer:${crypto.randomUUID()}`;
@@ -195,9 +188,43 @@ Act like a senior QA engineer:
 
 ## CRITICAL
 - Test MULTIPLE scenarios, not just one
-- Check EDGE CASES (empty inputs, wrong data, extreme values)
 - Look for OBVIOUS issues a human would notice immediately
 - Provide SPECIFIC feedback with file:line references
+
+## MANDATORY EDGE CASE CHECKLIST
+You MUST test these scenarios (where applicable):
+
+**Empty/Missing Data:**
+- [ ] Empty form submissions
+- [ ] Missing required fields
+- [ ] Empty lists/tables (zero items)
+- [ ] Null/undefined data from API
+
+**Error States:**
+- [ ] Invalid inputs (wrong format, too long, special chars)
+- [ ] API failures (500 errors, timeouts)
+- [ ] Network offline behavior
+- [ ] Permission denied scenarios
+
+**Boundary Values:**
+- [ ] Minimum values (0, 1, empty string)
+- [ ] Maximum values (very long text, large numbers)
+- [ ] Negative numbers (if applicable)
+- [ ] Special characters and unicode
+
+**UI States:**
+- [ ] Loading states (spinner/skeleton visible?)
+- [ ] Success feedback (toast/message shown?)
+- [ ] Error messages (clear and helpful?)
+- [ ] Disabled states (buttons gray when loading?)
+
+**Visual Checks:**
+- [ ] Text overflow/truncation handled?
+- [ ] Spacing consistent?
+- [ ] Mobile responsive (if applicable)?
+- [ ] Colors/contrast readable?
+
+DO NOT APPROVE if any applicable edge case fails or isn't handled gracefully.
 
 ## RESPONSE FORMAT
 Always respond with STRICT JSON in a code block:
@@ -259,8 +286,19 @@ function buildReviewerPrompt(opts: {
   planContext?: string;
   projectContext?: string;
   workspaceDir: string;
+  reviewConfig?: FeedbackLoopReviewConfig;
 }): string {
-  const { task, coderSummary, acceptanceCriteria, pastIssues, checklist, planContext, projectContext, workspaceDir } = opts;
+  const {
+    task,
+    coderSummary,
+    acceptanceCriteria,
+    pastIssues,
+    checklist,
+    planContext,
+    projectContext,
+    workspaceDir,
+    reviewConfig,
+  } = opts;
 
   let prompt = "";
 
@@ -310,6 +348,30 @@ ${acceptanceCriteria.map((c) => `- [ ] ${c}`).join("\n")}
 `;
   }
 
+  const useCodeReviewExpertRubric = reviewConfig?.useCodeReviewExpertRubric ?? true;
+  const minimumAverageRubricScore = reviewConfig?.minimumAverageRubricScore ?? 4.0;
+  if (useCodeReviewExpertRubric) {
+    prompt += `## CODE REVIEW EXPERT RUBRIC (MANDATORY)
+Score each dimension from 1-5 and justify briefly with evidence:
+1. Correctness (feature works end-to-end)
+2. Reliability (handles failure/retry/edge paths)
+3. Security (auth, secrets, input handling, unsafe patterns)
+4. Performance (obvious latency/waste regressions)
+5. Test quality (coverage of happy path + edge cases)
+6. UX & accessibility (clear states, errors, keyboard/focus, contrast)
+
+Include this in your JSON response as:
+"rubric": [
+  { "dimension": "correctness", "score": 4, "evidence": "..." },
+  { "dimension": "reliability", "score": 3, "evidence": "..." }
+]
+
+If any dimension score is <=2, set approved=false.
+Also require rubric average >= ${minimumAverageRubricScore.toFixed(1)} before setting approved=true.
+
+`;
+  }
+
   // Auto-detect URLs from task and coder summary
   const urlsToTest = extractUrlsToTest(task, coderSummary, workspaceDir);
 
@@ -321,6 +383,29 @@ ${urlsToTest.length > 0 ? urlsToTest.map(u => `- ${u.url}: ${u.expectation}`).jo
 2. Expected content/components are visible
 3. No console errors
 4. API calls succeed (check Network tab)
+
+## EDGE CASE TESTING (MANDATORY)
+
+For this feature, you MUST explicitly test:
+
+**Data Edge Cases:**
+- Empty/blank inputs → should show validation or handle gracefully
+- Missing data from API → should show loading/error state
+- Very long text → should truncate or wrap properly
+- Special characters (unicode, emoji, < > &) → should escape/display correctly
+
+**State Edge Cases:**
+- Loading state → should show spinner/skeleton
+- Error state → should show clear error message
+- Success state → should show confirmation
+- Empty state (no items) → should show helpful empty message
+
+**User Flow Edge Cases:**
+- Double-click submit → should prevent duplicate submissions
+- Back button behavior → should work correctly
+- Refresh during operation → should handle gracefully
+
+Document which edge cases you tested in your response.
 
 ## YOUR TASK
 
@@ -335,7 +420,7 @@ ${urlsToTest.length > 0 ? urlsToTest.map(u => `- ${u.url}: ${u.expectation}`).jo
 3. **Test functionality** (not just "page loads"):
    - Fill forms, click buttons
    - Test multiple scenarios (not just happy path)
-   - Check edge cases (empty data, errors)
+   - Test edge cases from the checklist above
 4. **Score** the work on functional, coverage, and UI/UX (1-5 scale)
 
 **DO NOT APPROVE** if:
@@ -485,6 +570,7 @@ type ParsedReviewerPayload = {
   approved: boolean;
   checks: ParsedCheck[];
   issues: ParsedIssue[];
+  rubric?: Array<{ dimension?: string; score?: number; evidence?: string }>;
   artifacts?: ParsedArtifacts;
   summary?: string;
   feedback?: string;
@@ -499,7 +585,26 @@ function extractReviewerJson(response: string): string | undefined {
   return objectMatch?.[0];
 }
 
-function normalizeReviewerPayload(payload: ParsedReviewerPayload): ReviewResult {
+function normalizeReviewerPayload(
+  payload: ParsedReviewerPayload,
+  options?: { minimumAverageRubricScore?: number; enforceRubricAverage?: boolean },
+): ReviewResult {
+  const minimumAverageRubricScore = options?.minimumAverageRubricScore ?? 4.0;
+  const enforceRubricAverage = options?.enforceRubricAverage ?? true;
+  const rubricScores = (payload.rubric ?? [])
+    .map((item) => item.score)
+    .filter((score): score is number => typeof score === "number");
+  const averageRubricScore =
+    rubricScores.length > 0
+      ? rubricScores.reduce((sum, score) => sum + score, 0) / rubricScores.length
+      : undefined;
+  const lowRubricScore = (payload.rubric ?? []).some(
+    (item) => typeof item.score === "number" && item.score <= 2,
+  );
+  const lowRubricAverage =
+    enforceRubricAverage &&
+    typeof averageRubricScore === "number" &&
+    averageRubricScore < minimumAverageRubricScore;
   const checks: CheckResult[] = payload.checks.map((check) => ({
     command: check.name ?? "review-check",
     name: check.name ?? "review-check",
@@ -528,11 +633,18 @@ function normalizeReviewerPayload(payload: ParsedReviewerPayload): ReviewResult 
     : undefined;
 
   return {
-    approved: payload.approved,
+    approved: payload.approved && !lowRubricScore && !lowRubricAverage,
     checks,
     issues: payload.issues,
     artifacts,
-    feedback: payload.feedback ?? payload.summary,
+    feedback:
+      payload.feedback ??
+      payload.summary ??
+      (lowRubricScore
+        ? "Reviewer rubric score too low for approval."
+        : lowRubricAverage
+          ? `Reviewer rubric average below threshold (${averageRubricScore?.toFixed(2)} < ${minimumAverageRubricScore.toFixed(2)}).`
+          : undefined),
     screenshots: artifacts?.screenshots,
     reviewerJsonValid: true,
   };
@@ -592,10 +704,25 @@ function validateReviewerPayload(value: unknown): ParsedReviewerPayload | undefi
     };
   }
 
+  const rubricValue = payload.rubric;
+  const rubric = Array.isArray(rubricValue)
+    ? rubricValue
+        .filter((item) => item && typeof item === "object")
+        .map((item) => {
+          const value = item as Record<string, unknown>;
+          return {
+            dimension: typeof value.dimension === "string" ? value.dimension : undefined,
+            score: typeof value.score === "number" ? value.score : undefined,
+            evidence: typeof value.evidence === "string" ? value.evidence : undefined,
+          };
+        })
+    : undefined;
+
   return {
     approved: payload.approved,
     checks,
     issues,
+    rubric,
     artifacts,
     summary: typeof payload.summary === "string" ? payload.summary : undefined,
     feedback: typeof payload.feedback === "string" ? payload.feedback : undefined,
@@ -607,6 +734,8 @@ export function parseReviewerResponse(
   config?: FeedbackLoopConfig,
 ): ReviewResult {
   const gates = resolveGateConfig(config);
+  const minimumAverageRubricScore = config?.review?.minimumAverageRubricScore ?? 4.0;
+  const enforceRubricAverage = config?.review?.useCodeReviewExpertRubric ?? true;
   if (!response) {
     return {
       approved: false,
@@ -622,7 +751,10 @@ export function parseReviewerResponse(
       const parsed = JSON.parse(raw);
       const normalized = validateReviewerPayload(parsed);
       if (normalized) {
-        return normalizeReviewerPayload(normalized);
+        return normalizeReviewerPayload(normalized, {
+          minimumAverageRubricScore,
+          enforceRubricAverage,
+        });
       }
       if (gates.requireReviewerJson || gates.blockApprovalOnParseFailure) {
         return {

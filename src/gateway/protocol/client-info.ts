@@ -1,16 +1,21 @@
 export const GATEWAY_CLIENT_IDS = {
   WEBCHAT_UI: "webchat-ui",
   CONTROL_UI: "openclaw-control-ui",
+  CONTROL_UI_LEGACY: "moltbot-control-ui",
   WEBCHAT: "webchat",
   CLI: "cli",
   GATEWAY_CLIENT: "gateway-client",
   MACOS_APP: "openclaw-macos",
+  MACOS_APP_LEGACY: "moltbot-macos",
   IOS_APP: "openclaw-ios",
+  IOS_APP_LEGACY: "moltbot-ios",
   ANDROID_APP: "openclaw-android",
+  ANDROID_APP_LEGACY: "moltbot-android",
   NODE_HOST: "node-host",
   TEST: "test",
   FINGERPRINT: "fingerprint",
   PROBE: "openclaw-probe",
+  PROBE_LEGACY: "moltbot-probe",
 } as const;
 
 export type GatewayClientId = (typeof GATEWAY_CLIENT_IDS)[keyof typeof GATEWAY_CLIENT_IDS];
@@ -63,6 +68,11 @@ export function normalizeGatewayClientId(raw?: string | null): GatewayClientId |
 
 export function normalizeGatewayClientName(raw?: string | null): GatewayClientName | undefined {
   return normalizeGatewayClientId(raw);
+}
+
+export function isGatewayControlUiClient(raw?: string | null): boolean {
+  const id = normalizeGatewayClientId(raw);
+  return id === GATEWAY_CLIENT_IDS.CONTROL_UI || id === GATEWAY_CLIENT_IDS.CONTROL_UI_LEGACY;
 }
 
 export function normalizeGatewayClientMode(raw?: string | null): GatewayClientMode | undefined {

@@ -1,7 +1,7 @@
 import * as fs from "node:fs/promises";
 import * as path from "node:path";
 
-import type { FeedbackLoopConfig } from "../../../src/config/types.agent-defaults.js";
+import type { FeedbackLoopConfig } from "openclaw/plugin-sdk";
 import type { ReviewResult, CheckResult } from "./orchestrator.js";
 
 export type MemoryContext = {

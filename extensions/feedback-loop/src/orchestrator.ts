@@ -2,14 +2,8 @@ import crypto from "node:crypto";
 import { spawnSync } from "node:child_process";
 import path from "node:path";
 
-import type {
-  FeedbackLoopConfig,
-  FeedbackLoopGatesConfig,
-} from "../../../src/config/types.agent-defaults.js";
-import type { OpenClawPluginApi } from "../../../src/plugins/types.js";
-import { callGateway } from "../../../src/gateway/call.js";
-import { AGENT_LANE_SUBAGENT } from "../../../src/agents/lanes.js";
-import { readLatestAssistantReply } from "../../../src/agents/tools/agent-step.js";
+import type { FeedbackLoopConfig, FeedbackLoopGatesConfig, OpenClawPluginApi } from "openclaw/plugin-sdk";
+import { callGateway, AGENT_LANE_SUBAGENT, readLatestAssistantReply } from "openclaw/plugin-sdk";
 
 import { streamToTerminal, TerminalStreamer } from "./terminal-stream.js";
 import { runVerificationCommands } from "./reviewer.js";
@@ -38,6 +32,12 @@ import { detectProjectRoot, loadProjectContext } from "./project-detection.js";
 
 // Self-correction pattern (pro-workflow inspired)
 import { extractLessons, appendLearnedRules } from "./self-correction.js";
+
+// Video proof capture
+import { captureVideoProof } from "./video-proof.js";
+
+// Council mode for multi-LLM deliberation on complex tasks
+import { runCouncil, shouldAutoTriggerCouncil, type CouncilResult } from "./council-mode.js";
 
 // Task enhancement - auto-structures vague tasks with verification criteria
 import { enhanceTask, buildEnhancedTaskPrompt, type EnhancedTask } from "./task-enhancer.js";
@@ -134,6 +134,7 @@ export type ReviewResult = {
   }>;
   artifacts?: {
     screenshots?: string[];
+    videoProof?: string[];
     urlsTested?: string[];
     commandSummaries?: string[];
     runtimeLogs?: string[];
@@ -494,6 +495,8 @@ export type LoopResult = {
   finalMessage?: string;
   /** Screenshot paths as proof of completion (sent with WhatsApp reply) */
   screenshots?: string[];
+  /** Video proof paths (if captured) */
+  videoProof?: string[];
   /** Changed files list */
   changedFiles?: string[];
   /** Commit info if auto-committed */
@@ -770,6 +773,31 @@ export async function runFeedbackLoop(
   }
 
   // ============================================
+  // GIT CHECKPOINT - Create rollback point before implementation
+  // ============================================
+  let checkpointBranch: string | undefined;
+  try {
+    const currentBranch = resolveGitRef(effectiveWorkspace, ["rev-parse", "--abbrev-ref", "HEAD"]);
+    if (currentBranch) {
+      checkpointBranch = `feedback-loop/checkpoint-${sessionId}`;
+      const branchRes = spawnSync(
+        "git",
+        ["-C", effectiveWorkspace, "branch", checkpointBranch],
+        { encoding: "utf-8" },
+      );
+      if (branchRes.status === 0) {
+        console.log(`[feedback-loop] Git checkpoint created: ${checkpointBranch}`);
+        terminal.log(`Git checkpoint: ${checkpointBranch}`);
+      } else {
+        checkpointBranch = undefined;
+        console.log(`[feedback-loop] Git checkpoint failed: ${branchRes.stderr}`);
+      }
+    }
+  } catch (err) {
+    console.log(`[feedback-loop] Git checkpoint skipped: ${err}`);
+  }
+
+  // ============================================
   // WORKFLOW PHASE 1: EXPLORE - Understand the codebase
   // ============================================
   terminal.log("");
@@ -853,6 +881,56 @@ export async function runFeedbackLoop(
   }
 
   // ============================================
+  // COUNCIL DELIBERATION (for complex tasks, before PLAN phase)
+  // ============================================
+  let councilResult: CouncilResult | undefined;
+  const councilConfig = api.config.agents?.defaults?.council;
+  const isComplexTask = !simpleTask && (
+    (exploreResult?.artifacts.relevantFiles?.split("\n").filter(Boolean).length ?? 0) > 3 ||
+    enhancedTask?.complexity === "complex"
+  );
+  const councilAutoTriggered = councilConfig?.enabled && councilConfig.autoTrigger
+    ? shouldAutoTriggerCouncil(task, councilConfig)
+    : false;
+
+  if (councilConfig?.enabled && (isComplexTask || councilAutoTriggered) && exploreResult?.success) {
+    terminal.log("");
+    terminal.log("━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━");
+    terminal.log("  COUNCIL - Multi-LLM deliberation on architecture");
+    terminal.log("━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━");
+    console.log(`[feedback-loop] Running council for complex task...`);
+
+    try {
+      const councilQuery = [
+        `## Task\n${task}`,
+        `## Codebase Context\n${exploreResult.artifacts.codebaseContext}`,
+        `## Relevant Files\n${exploreResult.artifacts.relevantFiles}`,
+        `## Existing Patterns\n${exploreResult.artifacts.existingPatterns}`,
+        `\nProvide your recommended architecture and implementation approach.`,
+      ].join("\n\n");
+
+      councilResult = await runCouncil(councilQuery, councilConfig, {
+        workspaceDir: effectiveWorkspace,
+        sessionKey: opts.sessionKey,
+      });
+
+      if (councilResult.ok) {
+        terminal.log(`Council deliberation complete (confidence: ${councilResult.confidence})`);
+        terminal.log(`  Agreements: ${councilResult.agreements.length}`);
+        if (councilResult.disagreements.length > 0) {
+          terminal.log(`  Disagreements: ${councilResult.disagreements.length}`);
+        }
+        console.log(`[feedback-loop] Council synthesis:\n${councilResult.synthesis.slice(0, 500)}`);
+      } else {
+        terminal.log(`Council deliberation failed, continuing without it`);
+      }
+    } catch (err) {
+      console.log(`[feedback-loop] Council failed: ${err}`);
+      terminal.log(`Council skipped due to error`);
+    }
+  }
+
+  // ============================================
   // WORKFLOW PHASE 2: PLAN - Create implementation plan
   // ============================================
   terminal.log("");
@@ -875,6 +953,20 @@ export async function runFeedbackLoop(
       parentSessionKey: opts.sessionKey,
       timestamp: Date.now(),
     });
+
+    // Inject council synthesis into workflow context for plan phase
+    if (councilResult?.ok && councilResult.synthesis) {
+      workflowContext.projectContext = [
+        workflowContext.projectContext ?? "",
+        `\n## COUNCIL SYNTHESIS (multi-LLM consensus, confidence: ${councilResult.confidence})\n${councilResult.synthesis}`,
+        councilResult.agreements.length > 0
+          ? `\n### Agreements\n${councilResult.agreements.map(a => `- ${a}`).join("\n")}`
+          : "",
+        councilResult.disagreements.length > 0
+          ? `\n### Disagreements (consider carefully)\n${councilResult.disagreements.map(d => `- ${d}`).join("\n")}`
+          : "",
+      ].filter(Boolean).join("\n");
+    }
 
     try {
       planResult = await runPlanPhase(workflowContext, exploreResult);
@@ -1070,9 +1162,27 @@ export async function runFeedbackLoop(
       });
     }
 
-    // 3-Strike Check: if same action failed 3 times, pause for user
+    // 3-Strike Check: if same action failed 3 times, rollback and pause
     if (state.lastErrorAction && checkThreeStrikes(await readTaskPlanForCheck(state.planningFiles), state.lastErrorAction)) {
       terminal.log(`⚠️ 3-Strike limit reached for: ${state.lastErrorAction}`);
+
+      // Auto-rollback to checkpoint if available
+      if (checkpointBranch) {
+        terminal.log(`Rolling back to checkpoint: ${checkpointBranch}`);
+        const rollbackRes = spawnSync(
+          "git",
+          ["-C", effectiveWorkspace, "checkout", checkpointBranch, "--", "."],
+          { encoding: "utf-8" },
+        );
+        if (rollbackRes.status === 0) {
+          terminal.log(`Rollback successful - working tree restored to checkpoint`);
+          console.log(`[feedback-loop] Rolled back to checkpoint ${checkpointBranch}`);
+        } else {
+          console.log(`[feedback-loop] Rollback failed: ${rollbackRes.stderr}`);
+          terminal.log(`Rollback failed: ${rollbackRes.stderr}`);
+        }
+      }
+
       state.paused = true;
       if (opts.onUserInput) {
         terminal.pause(state.iteration, "3-strike limit reached - need different approach");
@@ -1416,6 +1526,38 @@ export async function runFeedbackLoop(
     if (reviewResult.approved) {
       state.approved = true;
       terminal.approved();
+
+      // Video proof capture (if enabled)
+      if (config.gates?.requireVideoProof) {
+        terminal.log("📹 Capturing video proof...");
+        const proofResult = await captureVideoProof({
+          workspaceDir,
+          mode: config.gates.videoProofMode ?? "fast",
+          appUrl: config.gates.videoProofAppUrl,
+        });
+
+        if (proofResult.ok) {
+          terminal.log(`✓ Video proof captured: ${proofResult.videoPath ?? "unknown"}`);
+          // Add video proof to review artifacts
+          if (!reviewResult.artifacts) {
+            reviewResult.artifacts = {};
+          }
+          if (proofResult.videoPath) {
+            reviewResult.artifacts.videoProof = [proofResult.videoPath];
+          }
+          if (proofResult.screenshots?.length) {
+            reviewResult.artifacts.screenshots = [
+              ...(reviewResult.artifacts.screenshots ?? []),
+              ...proofResult.screenshots,
+            ];
+          }
+        } else {
+          terminal.log(`✗ Video proof failed: ${proofResult.error ?? "unknown error"}`);
+          // Block approval if video proof is required and failed
+          state.approved = false;
+          terminal.feedback("Video proof capture failed - approval blocked");
+        }
+      }
     } else {
       terminal.feedback(reviewResult.feedback ?? "Issues found, needs fixes");
       state.previousFeedback = reviewResult.feedback;
@@ -1555,6 +1697,20 @@ export async function runFeedbackLoop(
   }
 
   // ============================================
+  // CLEANUP: Remove git checkpoint branch on success
+  // ============================================
+  if (checkpointBranch && state.approved) {
+    try {
+      spawnSync("git", ["-C", effectiveWorkspace, "branch", "-D", checkpointBranch], {
+        encoding: "utf-8",
+      });
+      console.log(`[feedback-loop] Cleaned up checkpoint branch: ${checkpointBranch}`);
+    } catch {
+      // Non-critical, ignore
+    }
+  }
+
+  // ============================================
   // WORKFLOW COMPLETE - Summary
   // ============================================
   terminal.log("");
@@ -1586,8 +1742,16 @@ export async function runFeedbackLoop(
     .flatMap(h => h.reviewResult?.screenshots ?? [])
     .filter((s, i, arr) => arr.indexOf(s) === i);
 
+  // Collect all video proof from review history
+  const allVideoProof = state.history
+    .flatMap(h => h.reviewResult?.artifacts?.videoProof ?? [])
+    .filter((v, i, arr) => arr.indexOf(v) === i);
+
   if (allScreenshots.length > 0) {
     terminal.log(`  Screenshots captured: ${allScreenshots.length}`);
+  }
+  if (allVideoProof.length > 0) {
+    terminal.log(`  Video proof captured: ${allVideoProof.length}`);
   }
 
   return {
@@ -1596,6 +1760,7 @@ export async function runFeedbackLoop(
     history: state.history,
     changedFiles,
     screenshots: allScreenshots.length > 0 ? allScreenshots : undefined,
+    videoProof: allVideoProof.length > 0 ? allVideoProof : undefined,
     checkpoint: finalCheckpoint,
     commit: commitResult,
     finalMessage: state.approved
@@ -1804,7 +1969,16 @@ async function runCoderWithModel(
 IMPORTANT: Work in the WORKSPACE directory specified above.
 After you make changes, summarize what you did in 1-2 sentences.
 Do NOT run tests yourself - the REVIEWER will handle verification.
-Focus on implementing the requested changes correctly.`,
+Focus on implementing the requested changes correctly.
+
+## TEST-FIRST PROTOCOL (mandatory for bug fixes, recommended for features)
+When fixing bugs or adding features:
+1. FIRST: Write a failing test that captures the expected behavior
+2. SECOND: Verify the test would fail (describe why it fails in your summary)
+3. THIRD: Implement the fix/feature
+4. FOURTH: Confirm the test should now pass
+
+Start your summary with "[TEST-FIRST]" if you followed this protocol, or "[DIRECT]" if you skipped it (with justification).`,
         spawnedBy: sessionKey,
         label: "feedback-loop-coder",
       },

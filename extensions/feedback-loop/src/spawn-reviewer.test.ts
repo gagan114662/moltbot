@@ -66,4 +66,64 @@ describe("parseReviewerResponse", () => {
     expect(result.reviewerJsonValid).toBe(false);
     expect(result.approved).toBe(true);
   });
+
+  it("blocks approval when reviewer rubric includes a low score", () => {
+    const result = parseReviewerResponse(
+      `\`\`\`json
+{
+  "approved": true,
+  "checks": [{ "name": "browser", "passed": true, "evidence": "ok" }],
+  "issues": [],
+  "rubric": [
+    { "dimension": "correctness", "score": 4, "evidence": "works" },
+    { "dimension": "reliability", "score": 2, "evidence": "flaky retries" }
+  ]
+}
+\`\`\``,
+    );
+
+    expect(result.reviewerJsonValid).toBe(true);
+    expect(result.approved).toBe(false);
+    expect(result.feedback).toContain("rubric");
+  });
+
+  it("blocks approval when rubric average is below default threshold", () => {
+    const result = parseReviewerResponse(
+      `\`\`\`json
+{
+  "approved": true,
+  "checks": [{ "name": "browser", "passed": true, "evidence": "ok" }],
+  "issues": [],
+  "rubric": [
+    { "dimension": "correctness", "score": 3, "evidence": "partial" },
+    { "dimension": "reliability", "score": 4, "evidence": "good" }
+  ]
+}
+\`\`\``,
+    );
+
+    expect(result.reviewerJsonValid).toBe(true);
+    expect(result.approved).toBe(false);
+    expect(result.feedback).toContain("average below threshold");
+  });
+
+  it("honors custom rubric average threshold from config", () => {
+    const result = parseReviewerResponse(
+      `\`\`\`json
+{
+  "approved": true,
+  "checks": [{ "name": "browser", "passed": true, "evidence": "ok" }],
+  "issues": [],
+  "rubric": [
+    { "dimension": "correctness", "score": 3, "evidence": "partial" },
+    { "dimension": "reliability", "score": 4, "evidence": "good" }
+  ]
+}
+\`\`\``,
+      { review: { minimumAverageRubricScore: 3.5 } },
+    );
+
+    expect(result.reviewerJsonValid).toBe(true);
+    expect(result.approved).toBe(true);
+  });
 });

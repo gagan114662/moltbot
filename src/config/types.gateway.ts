@@ -87,6 +87,8 @@ export type GatewayAuthConfig = {
   password?: string;
   /** Allow Tailscale identity headers when serve mode is enabled. */
   allowTailscale?: boolean;
+  /** Allow loopback (127.0.0.1) connections without auth (for local dev). */
+  allowLoopbackBypass?: boolean;
 };
 
 export type GatewayTailscaleMode = "off" | "serve" | "funnel";
@@ -209,6 +211,15 @@ export type GatewayNodesConfig = {
   allowCommands?: string[];
   /** Commands to deny even if they appear in the defaults or node claims. */
   denyCommands?: string[];
+};
+
+export type GatewayRateLimitConfig = {
+  /** Whether rate limiting is enabled (default: true). */
+  enabled?: boolean;
+  /** Maximum messages per second per connection (default: 50). */
+  messagesPerSecond?: number;
+  /** Burst allowance - extra messages allowed in short bursts (default: 100). */
+  burstAllowance?: number;
 };
 
 export type GatewayConfig = {

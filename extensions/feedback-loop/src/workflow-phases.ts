@@ -7,10 +7,8 @@
 
 import crypto from "node:crypto";
 
-import type { FeedbackLoopConfig } from "../../../src/config/types.agent-defaults.js";
-import { callGateway } from "../../../src/gateway/call.js";
-import { AGENT_LANE_SUBAGENT } from "../../../src/agents/lanes.js";
-import { readLatestAssistantReply } from "../../../src/agents/tools/agent-step.js";
+import type { FeedbackLoopConfig } from "openclaw/plugin-sdk";
+import { callGateway, AGENT_LANE_SUBAGENT, readLatestAssistantReply } from "openclaw/plugin-sdk";
 
 import type { EnhancedTask } from "./task-enhancer.js";
 
