@@ -12,8 +12,8 @@
  * - Parallel execution minimizes latency
  */
 
-import crypto from "node:crypto";
 import type { CouncilConfig, CouncilMemberConfig } from "openclaw/plugin-sdk";
+import crypto from "node:crypto";
 import { callGateway, readLatestAssistantReply, AGENT_LANE_SUBAGENT } from "openclaw/plugin-sdk";
 
 // ============================================
@@ -170,7 +170,9 @@ export async function runCouncil(
   }
 
   // Phase 2: Chair synthesizes the responses
-  console.log(`[council-mode] Phase 2: Chair synthesizing ${successfulResponses.length} responses...`);
+  console.log(
+    `[council-mode] Phase 2: Chair synthesizing ${successfulResponses.length} responses...`,
+  );
   const chairResult = await runChairSynthesis(
     query,
     successfulResponses,
@@ -184,7 +186,9 @@ export async function runCouncil(
   const parsed = parseChairResponse(chairResult.synthesis);
 
   const totalDurationMs = Date.now() - startTime;
-  console.log(`[council-mode] Council complete in ${totalDurationMs}ms (chair: ${chairResult.durationMs}ms)`);
+  console.log(
+    `[council-mode] Council complete in ${totalDurationMs}ms (chair: ${chairResult.durationMs}ms)`,
+  );
 
   return {
     ok: true,
@@ -254,7 +258,7 @@ async function runSingleMember(
   member: CouncilMember,
   timeoutMs: number,
   sessionId: string,
-  context?: { workspaceDir?: string; sessionKey?: string },
+  _context?: { workspaceDir?: string; sessionKey?: string },
 ): Promise<string> {
   const childSessionKey = `council:${sessionId}:member:${member.id}:${crypto.randomUUID().slice(0, 8)}`;
 
@@ -316,7 +320,7 @@ Focus on your unique angle (${member.role || "general"}) while being practical.`
     return response || "No response";
   } catch (err) {
     const error = err instanceof Error ? err.message : String(err);
-    throw new Error(`Member ${member.id} (${member.model}): ${error}`);
+    throw new Error(`Member ${member.id} (${member.model}): ${error}`, { cause: err });
   }
 }
 
@@ -333,7 +337,7 @@ async function runChairSynthesis(
   chairModel: string,
   customSynthesisPrompt?: string,
   sessionId?: string,
-  context?: { workspaceDir?: string; sessionKey?: string },
+  _context?: { workspaceDir?: string; sessionKey?: string },
 ): Promise<{ synthesis: string; durationMs: number }> {
   const startTime = Date.now();
   const childSessionKey = `council:${sessionId || crypto.randomUUID().slice(0, 8)}:chair:${crypto.randomUUID().slice(0, 8)}`;
@@ -404,7 +408,7 @@ function buildChairPrompt(
   const synthesisPrompt = customSynthesisPrompt || DEFAULT_SYNTHESIS_PROMPT;
 
   // Anonymize responses with random IDs (A, B, C, D) for objective evaluation
-  const shuffled = [...memberResponses].sort(() => Math.random() - 0.5);
+  const shuffled = [...memberResponses].toSorted(() => Math.random() - 0.5);
   const labels = ["A", "B", "C", "D", "E", "F", "G", "H"];
 
   const responsesSection = shuffled
@@ -446,16 +450,17 @@ function parseChairResponse(raw: string): {
   minorityViews: string[];
 } {
   // Extract synthesis section
-  const synthesisMatch = raw.match(/## Synthesis\s*([\s\S]*?)(?=## Confidence|## Council Notes|$)/i);
+  const synthesisMatch = raw.match(
+    /## Synthesis\s*([\s\S]*?)(?=## Confidence|## Council Notes|$)/i,
+  );
   const synthesis = synthesisMatch?.[1]?.trim() || raw;
 
   // Extract confidence
   const confidenceMatch = raw.match(/## Confidence\s*\n?\s*\*?\*?(High|Medium|Low)/i);
   const confidenceRaw = confidenceMatch?.[1]?.toLowerCase() || "medium";
-  const confidence = (["high", "medium", "low"].includes(confidenceRaw) ? confidenceRaw : "medium") as
-    | "high"
-    | "medium"
-    | "low";
+  const confidence = (
+    ["high", "medium", "low"].includes(confidenceRaw) ? confidenceRaw : "medium"
+  ) as "high" | "medium" | "low";
 
   // Extract council notes
   const agreementsMatch = raw.match(/\*?\*?Agreements:?\*?\*?\s*([^\n*]+)/i);
@@ -521,28 +526,46 @@ export function estimateQueryComplexity(query: string): number {
   let score = 0;
 
   // Length of query
-  if (query.length > 200) score += 0.2;
-  if (query.length > 500) score += 0.1;
+  if (query.length > 200) {
+    score += 0.2;
+  }
+  if (query.length > 500) {
+    score += 0.1;
+  }
 
   // Trade-off/comparison language
-  if (/trade.?off|compare|versus|vs\.|debate|pros.+cons/i.test(query)) score += 0.3;
+  if (/trade.?off|compare|versus|vs\.|debate|pros.+cons/i.test(query)) {
+    score += 0.3;
+  }
 
   // Multiple questions
   const questionCount = (query.match(/\?/g) || []).length;
-  if (questionCount > 1) score += 0.2;
-  if (questionCount > 3) score += 0.1;
+  if (questionCount > 1) {
+    score += 0.2;
+  }
+  if (questionCount > 3) {
+    score += 0.1;
+  }
 
   // Opinion/recommendation seeking
-  if (/should|best|recommend|advise|opinion|which/i.test(query)) score += 0.2;
+  if (/should|best|recommend|advise|opinion|which/i.test(query)) {
+    score += 0.2;
+  }
 
   // Architectural/strategic topics
-  if (/architecture|design|strategy|approach|pattern|framework/i.test(query)) score += 0.1;
+  if (/architecture|design|strategy|approach|pattern|framework/i.test(query)) {
+    score += 0.1;
+  }
 
   // Technical depth indicators
-  if (/scalab|performance|security|reliab|maintain/i.test(query)) score += 0.1;
+  if (/scalab|performance|security|reliab|maintain/i.test(query)) {
+    score += 0.1;
+  }
 
   // Philosophical/abstract
-  if (/future|long.?term|evolv|transform|paradigm/i.test(query)) score += 0.1;
+  if (/future|long.?term|evolv|transform|paradigm/i.test(query)) {
+    score += 0.1;
+  }
 
   return Math.min(1, score);
 }
@@ -551,7 +574,9 @@ export function estimateQueryComplexity(query: string): number {
  * Check if council should auto-trigger for this query
  */
 export function shouldAutoTriggerCouncil(query: string, config: CouncilConfig): boolean {
-  if (!config.autoTrigger) return false;
+  if (!config.autoTrigger) {
+    return false;
+  }
 
   const complexity = estimateQueryComplexity(query);
   const threshold = config.complexityThreshold ?? 0.8;

@@ -44,9 +44,7 @@ export function extractLessons(feedback: string): CorrectionPattern[] {
   const patterns: CorrectionPattern[] = [];
 
   // Pattern 1: Explicit correction markers
-  const explicitMatches = feedback.matchAll(
-    /\[LEARN\]\s*(\w+):\s*(.+?)(?:\n|$)/gi,
-  );
+  const explicitMatches = feedback.matchAll(/\[LEARN\]\s*(\w+):\s*(.+?)(?:\n|$)/gi);
   for (const match of explicitMatches) {
     patterns.push({
       mistake: "From review feedback",
@@ -58,13 +56,41 @@ export function extractLessons(feedback: string): CorrectionPattern[] {
 
   // Pattern 2: Common issue keywords
   const issuePatterns = [
-    { regex: /not integrated|demo page|not used/i, category: "Integration", rule: "Integrate into existing pages, not demo files" },
-    { regex: /wrong (file|path|directory)/i, category: "Navigation", rule: "Verify full path before editing" },
-    { regex: /type error|typescript|type mismatch/i, category: "Quality", rule: "Run type check before completing" },
-    { regex: /test fail|tests? (fail|broken)/i, category: "Testing", rule: "Run tests before marking complete" },
-    { regex: /missing import|import error/i, category: "Editing", rule: "Verify imports after adding dependencies" },
-    { regex: /console\.log|debugger|TODO/i, category: "Quality", rule: "Remove debug statements before commit" },
-    { regex: /didn't ask|should have asked|clarify/i, category: "Context", rule: "Ask for clarification when requirements unclear" },
+    {
+      regex: /not integrated|demo page|not used/i,
+      category: "Integration",
+      rule: "Integrate into existing pages, not demo files",
+    },
+    {
+      regex: /wrong (file|path|directory)/i,
+      category: "Navigation",
+      rule: "Verify full path before editing",
+    },
+    {
+      regex: /type error|typescript|type mismatch/i,
+      category: "Quality",
+      rule: "Run type check before completing",
+    },
+    {
+      regex: /test fail|tests? (fail|broken)/i,
+      category: "Testing",
+      rule: "Run tests before marking complete",
+    },
+    {
+      regex: /missing import|import error/i,
+      category: "Editing",
+      rule: "Verify imports after adding dependencies",
+    },
+    {
+      regex: /console\.log|debugger|TODO/i,
+      category: "Quality",
+      rule: "Remove debug statements before commit",
+    },
+    {
+      regex: /didn't ask|should have asked|clarify/i,
+      category: "Context",
+      rule: "Ask for clarification when requirements unclear",
+    },
   ];
 
   for (const pattern of issuePatterns) {
@@ -98,11 +124,11 @@ export async function loadLearnedRules(filePath: string): Promise<LearnedRule[]>
 
     // Parse markdown format: ## LEARNED\n- **Category**: Rule
     const learnedSection = content.match(/## LEARNED[\s\S]*?(?=\n##|$)/i);
-    if (!learnedSection) return rules;
+    if (!learnedSection) {
+      return rules;
+    }
 
-    const ruleMatches = learnedSection[0].matchAll(
-      /- \*\*(\w+)\*\*:\s*(.+?)(?:\n|$)/g,
-    );
+    const ruleMatches = learnedSection[0].matchAll(/- \*\*(\w+)\*\*:\s*(.+?)(?:\n|$)/g);
 
     for (const match of ruleMatches) {
       rules.push({
@@ -122,10 +148,7 @@ export async function loadLearnedRules(filePath: string): Promise<LearnedRule[]>
 /**
  * Save learned rules to LEARNED.md
  */
-export async function saveLearnedRules(
-  filePath: string,
-  rules: LearnedRule[],
-): Promise<void> {
+export async function saveLearnedRules(filePath: string, rules: LearnedRule[]): Promise<void> {
   // Group by category
   const byCategory = new Map<string, LearnedRule[]>();
   for (const rule of rules) {
@@ -150,7 +173,7 @@ export async function saveLearnedRules(
 
   // Also include any custom categories
   for (const [category, categoryRules] of byCategory) {
-    if (!LEARNED_CATEGORIES.includes(category as typeof LEARNED_CATEGORIES[number])) {
+    if (!LEARNED_CATEGORIES.includes(category as (typeof LEARNED_CATEGORIES)[number])) {
       lines.push(`## ${category}`);
       for (const rule of categoryRules) {
         lines.push(`- ${rule.rule}`);
@@ -170,7 +193,9 @@ export async function appendLearnedRules(
   filePath: string,
   newPatterns: CorrectionPattern[],
 ): Promise<number> {
-  if (newPatterns.length === 0) return 0;
+  if (newPatterns.length === 0) {
+    return 0;
+  }
 
   // Load existing rules
   const existing = await loadLearnedRules(filePath);
@@ -181,7 +206,9 @@ export async function appendLearnedRules(
     (p) => p.rule && !existingRules.has(p.rule.toLowerCase()),
   );
 
-  if (uniquePatterns.length === 0) return 0;
+  if (uniquePatterns.length === 0) {
+    return 0;
+  }
 
   // Convert to LearnedRule format
   const newRules: LearnedRule[] = uniquePatterns.map((p) => ({
@@ -202,7 +229,9 @@ export async function appendLearnedRules(
  * Build context string from learned rules for injection into prompts
  */
 export function buildLearnedContext(rules: LearnedRule[]): string {
-  if (rules.length === 0) return "";
+  if (rules.length === 0) {
+    return "";
+  }
 
   const lines = ["## LEARNED PATTERNS (from past sessions)", ""];
 

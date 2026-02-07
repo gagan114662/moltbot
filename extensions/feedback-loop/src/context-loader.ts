@@ -99,7 +99,8 @@ const PATTERNS = {
   directory: /(?:in |under |at |check |within )([a-zA-Z0-9_\-./]+\/)/gi,
 
   // Example patterns: like X, similar to Y, following Z pattern
-  examplePattern: /(?:like |similar to |following |same as |pattern (?:of|from|in) )([A-Za-z0-9_\-./]+(?:\.[a-zA-Z]+)?)/gi,
+  examplePattern:
+    /(?:like |similar to |following |same as |pattern (?:of|from|in) )([A-Za-z0-9_\-./]+(?:\.[a-zA-Z]+)?)/gi,
 
   // Constraints
   avoidConstraint: /(?:avoid|don't use|without|no |never use|skip) ([a-zA-Z0-9_\- ]+?)(?:\.|,|$)/gi,
@@ -107,17 +108,20 @@ const PATTERNS = {
   preferConstraint: /(?:prefer|prioritize|favor) ([a-zA-Z0-9_\- ]+?)(?:\.|,|$)/gi,
 
   // Symptoms with location
-  symptomLocation: /(?:fails?|errors?|crashes?|breaks?|bugs?) (?:in |at |when |after |during )([^.]+)/gi,
+  symptomLocation:
+    /(?:fails?|errors?|crashes?|breaks?|bugs?) (?:in |at |when |after |during )([^.]+)/gi,
   expectedFix: /(?:should |fix should |expected |correct behavior:? )([^.]+)/gi,
 
   // Git history
-  gitHistory: /(?:git history|commit history|blame|how .+ came to be) (?:of |for )?([a-zA-Z0-9_\-./]+)/gi,
+  gitHistory:
+    /(?:git history|commit history|blame|how .+ came to be) (?:of |for )?([a-zA-Z0-9_\-./]+)/gi,
 
   // URLs
   url: /(https?:\/\/[^\s]+)/g,
 
   // Images
-  image: /(?:screenshot|image|mockup|design|reference)[:\s]+([a-zA-Z0-9_\-./]+\.(?:png|jpg|jpeg|gif|svg|webp))/gi,
+  image:
+    /(?:screenshot|image|mockup|design|reference)[:\s]+([a-zA-Z0-9_\-./]+\.(?:png|jpg|jpeg|gif|svg|webp))/gi,
 };
 
 // ============================================
@@ -243,10 +247,13 @@ export function extractContext(task: string): ExtractedContext {
   for (const match of task.matchAll(PATTERNS.image)) {
     context.images.push({
       path: match[1],
-      type: task.toLowerCase().includes("screenshot") ? "screenshot"
-        : task.toLowerCase().includes("mockup") ? "mockup"
-        : task.toLowerCase().includes("design") ? "design"
-        : "reference",
+      type: task.toLowerCase().includes("screenshot")
+        ? "screenshot"
+        : task.toLowerCase().includes("mockup")
+          ? "mockup"
+          : task.toLowerCase().includes("design")
+            ? "design"
+            : "reference",
     });
   }
 
@@ -269,9 +276,11 @@ export async function loadFileContents(
   let totalChars = 0;
 
   // Load explicitly referenced files first (highest priority)
-  const explicitFiles = context.referencedFiles.filter(f => f.reason === "explicit");
+  const explicitFiles = context.referencedFiles.filter((f) => f.reason === "explicit");
   for (const file of explicitFiles) {
-    if (totalChars >= maxTotalChars) break;
+    if (totalChars >= maxTotalChars) {
+      break;
+    }
     const content = await loadFile(file.path, workspaceDir);
     if (content) {
       const truncated = truncateContent(content, maxTotalChars - totalChars);
@@ -282,7 +291,9 @@ export async function loadFileContents(
 
   // Load example pattern files
   for (const pattern of context.examplePatterns) {
-    if (totalChars >= maxTotalChars) break;
+    if (totalChars >= maxTotalChars) {
+      break;
+    }
     if (pattern.file.includes(".")) {
       const content = await loadFile(pattern.file, workspaceDir);
       if (content) {
@@ -295,10 +306,15 @@ export async function loadFileContents(
 
   // Load files from directories (if space remains)
   for (const dir of context.directoriesToExplore) {
-    if (totalChars >= maxTotalChars * 0.8) break; // Leave some room
+    if (totalChars >= maxTotalChars * 0.8) {
+      break; // Leave some room
+    }
     const dirFiles = await listFilesInDir(dir, workspaceDir);
-    for (const file of dirFiles.slice(0, 5)) { // Max 5 files per dir
-      if (totalChars >= maxTotalChars) break;
+    for (const file of dirFiles.slice(0, 5)) {
+      // Max 5 files per dir
+      if (totalChars >= maxTotalChars) {
+        break;
+      }
       const content = await loadFile(file, workspaceDir);
       if (content) {
         const truncated = truncateContent(content, Math.min(5000, maxTotalChars - totalChars));
@@ -309,9 +325,11 @@ export async function loadFileContents(
   }
 
   // Load inferred files (lowest priority)
-  const inferredFiles = context.referencedFiles.filter(f => f.reason === "inferred");
+  const inferredFiles = context.referencedFiles.filter((f) => f.reason === "inferred");
   for (const file of inferredFiles) {
-    if (totalChars >= maxTotalChars) break;
+    if (totalChars >= maxTotalChars) {
+      break;
+    }
     const content = await loadFile(file.path, workspaceDir);
     if (content) {
       const truncated = truncateContent(content, Math.min(5000, maxTotalChars - totalChars));
@@ -331,12 +349,7 @@ async function loadFile(filePath: string, workspaceDir: string): Promise<string 
     return content;
   } catch {
     // Try common variations
-    const variations = [
-      filePath,
-      `src/${filePath}`,
-      `lib/${filePath}`,
-      `app/${filePath}`,
-    ];
+    const variations = [filePath, `src/${filePath}`, `lib/${filePath}`, `app/${filePath}`];
     for (const variant of variations) {
       try {
         const content = await fs.readFile(path.join(workspaceDir, variant), "utf-8");
@@ -354,8 +367,10 @@ async function listFilesInDir(dir: string, workspaceDir: string): Promise<string
     const fullPath = path.join(workspaceDir, dir);
     const entries = await fs.readdir(fullPath, { withFileTypes: true });
     return entries
-      .filter(e => e.isFile() && /\.(ts|tsx|js|jsx|py|go|rs|vue|svelte|php|rb|java)$/.test(e.name))
-      .map(e => path.join(dir, e.name))
+      .filter(
+        (e) => e.isFile() && /\.(ts|tsx|js|jsx|py|go|rs|vue|svelte|php|rb|java)$/.test(e.name),
+      )
+      .map((e) => path.join(dir, e.name))
       .slice(0, 10);
   } catch {
     return [];
@@ -363,7 +378,9 @@ async function listFilesInDir(dir: string, workspaceDir: string): Promise<string
 }
 
 function truncateContent(content: string, maxChars: number): string {
-  if (content.length <= maxChars) return content;
+  if (content.length <= maxChars) {
+    return content;
+  }
   const half = Math.floor(maxChars / 2);
   return content.slice(0, half) + "\n\n... [truncated] ...\n\n" + content.slice(-half);
 }
@@ -415,14 +432,14 @@ ${extracted.symptom.expectedFix ? `**Expected fix:** ${extracted.symptom.expecte
   // Constraints (important - show prominently)
   if (extracted.constraints.length > 0) {
     sections.push(`## CONSTRAINTS (MUST FOLLOW)
-${extracted.constraints.map(c => `- ${c.description}`).join("\n")}
+${extracted.constraints.map((c) => `- ${c.description}`).join("\n")}
 `);
   }
 
   // Example patterns to follow
   if (extracted.examplePatterns.length > 0) {
     sections.push(`## EXAMPLE PATTERNS (follow these)
-${extracted.examplePatterns.map(p => `- ${p.file}: ${p.description}`).join("\n")}
+${extracted.examplePatterns.map((p) => `- ${p.file}: ${p.description}`).join("\n")}
 `);
 
     // Include pattern file contents
@@ -446,7 +463,9 @@ The following files were mentioned or are relevant to this task:
 
     for (const [filePath, content] of fileContents) {
       // Skip if already shown as pattern
-      if (extracted.examplePatterns.some(p => p.file === filePath)) continue;
+      if (extracted.examplePatterns.some((p) => p.file === filePath)) {
+        continue;
+      }
 
       sections.push(`### ${filePath}
 \`\`\`
@@ -459,30 +478,30 @@ ${content.slice(0, 5000)}${content.length > 5000 ? "\n... [truncated]" : ""}
   // Directories to focus on
   if (extracted.directoriesToExplore.length > 0) {
     sections.push(`## DIRECTORIES TO FOCUS ON
-${extracted.directoriesToExplore.map(d => `- ${d}/`).join("\n")}
+${extracted.directoriesToExplore.map((d) => `- ${d}/`).join("\n")}
 `);
   }
 
   // Documentation URLs
   if (extracted.documentationUrls.length > 0) {
     sections.push(`## DOCUMENTATION REFERENCES
-${extracted.documentationUrls.map(u => `- ${u}`).join("\n")}
+${extracted.documentationUrls.map((u) => `- ${u}`).join("\n")}
 `);
   }
 
   // Git history requests
   if (extracted.gitHistoryRequests.length > 0) {
     sections.push(`## GIT HISTORY ANALYSIS REQUESTED
-${extracted.gitHistoryRequests.map(r => `- ${r.file}: ${r.reason}`).join("\n")}
+${extracted.gitHistoryRequests.map((r) => `- ${r.file}: ${r.reason}`).join("\n")}
 
-Run \`git log --oneline --follow ${extracted.gitHistoryRequests.map(r => r.file).join(" ")}\` to see history.
+Run \`git log --oneline --follow ${extracted.gitHistoryRequests.map((r) => r.file).join(" ")}\` to see history.
 `);
   }
 
   // Image references
   if (extracted.images.length > 0) {
     sections.push(`## IMAGE REFERENCES
-${extracted.images.map(i => `- ${i.path} (${i.type})`).join("\n")}
+${extracted.images.map((i) => `- ${i.path} (${i.type})`).join("\n")}
 `);
   }
 

@@ -11,8 +11,8 @@
  * - MCP readiness
  */
 
-import crypto from "node:crypto";
 import type { FeedbackLoopConfig } from "openclaw/plugin-sdk";
+import crypto from "node:crypto";
 
 // ============================================
 // SUBAGENT TYPES (matching Claude Code's Task tool)
@@ -22,10 +22,10 @@ import type { FeedbackLoopConfig } from "openclaw/plugin-sdk";
  * Claude Code subagent types available for spawning
  */
 export type SubagentType =
-  | "Bash"           // Command execution specialist
+  | "Bash" // Command execution specialist
   | "general-purpose" // General-purpose agent for multi-step tasks
-  | "Explore"        // Fast codebase exploration
-  | "Plan"           // Software architect for implementation plans
+  | "Explore" // Fast codebase exploration
+  | "Plan" // Software architect for implementation plans
   | "claude-code-guide"; // Claude Code documentation expert
 
 /**
@@ -85,7 +85,9 @@ export async function runParallelSubagents<T extends Record<string, SubagentSpaw
     }),
   );
 
-  console.log(`[claude-code] All ${entries.length} subagents completed in ${Date.now() - startTime}ms`);
+  console.log(
+    `[claude-code] All ${entries.length} subagents completed in ${Date.now() - startTime}ms`,
+  );
 
   return Object.fromEntries(results) as Record<keyof T, SubagentResult>;
 }
@@ -119,7 +121,9 @@ export interface ParallelExploreResult {
   };
 }
 
-export function buildParallelExploreAgents(opts: ParallelExploreOptions): Record<string, SubagentSpawnOptions> {
+export function buildParallelExploreAgents(
+  opts: ParallelExploreOptions,
+): Record<string, SubagentSpawnOptions> {
   return {
     structure: {
       description: "Explore codebase structure",
@@ -335,19 +339,36 @@ export function createTask(opts: {
  */
 export function updateTask(
   taskId: string,
-  update: Partial<Pick<FeedbackLoopTask, "status" | "subject" | "description" | "activeForm" | "owner" | "metadata">> & {
+  update: Partial<
+    Pick<
+      FeedbackLoopTask,
+      "status" | "subject" | "description" | "activeForm" | "owner" | "metadata"
+    >
+  > & {
     addBlockedBy?: string[];
     addBlocks?: string[];
   },
 ): FeedbackLoopTask | undefined {
   const task = taskList.get(taskId);
-  if (!task) return undefined;
+  if (!task) {
+    return undefined;
+  }
 
-  if (update.status) task.status = update.status;
-  if (update.subject) task.subject = update.subject;
-  if (update.description) task.description = update.description;
-  if (update.activeForm) task.activeForm = update.activeForm;
-  if (update.owner) task.owner = update.owner;
+  if (update.status) {
+    task.status = update.status;
+  }
+  if (update.subject) {
+    task.subject = update.subject;
+  }
+  if (update.description) {
+    task.description = update.description;
+  }
+  if (update.activeForm) {
+    task.activeForm = update.activeForm;
+  }
+  if (update.owner) {
+    task.owner = update.owner;
+  }
   if (update.metadata) {
     task.metadata = { ...task.metadata, ...update.metadata };
   }
@@ -430,7 +451,10 @@ export interface FeedbackLoopSkill {
 }
 
 export function createFeedbackLoopSkill(
-  runLoop: (task: string, config: FeedbackLoopConfig) => Promise<{ approved: boolean; iterations: number }>,
+  runLoop: (
+    task: string,
+    config: FeedbackLoopConfig,
+  ) => Promise<{ approved: boolean; iterations: number }>,
   config: FeedbackLoopConfig,
 ): FeedbackLoopSkill {
   return {
@@ -583,7 +607,9 @@ export function onSubagentLifecycle(listener: SubagentEventListener): () => void
   subagentEventListeners.push(listener);
   return () => {
     const idx = subagentEventListeners.indexOf(listener);
-    if (idx >= 0) subagentEventListeners.splice(idx, 1);
+    if (idx >= 0) {
+      subagentEventListeners.splice(idx, 1);
+    }
   };
 }
 

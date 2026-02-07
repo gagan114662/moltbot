@@ -1,65 +1,13 @@
-import crypto from "node:crypto";
+import type {
+  FeedbackLoopConfig,
+  FeedbackLoopGatesConfig,
+  OpenClawPluginApi,
+} from "openclaw/plugin-sdk";
 import { spawnSync } from "node:child_process";
+import crypto from "node:crypto";
 import path from "node:path";
-
-import type { FeedbackLoopConfig, FeedbackLoopGatesConfig, OpenClawPluginApi } from "openclaw/plugin-sdk";
 import { callGateway, AGENT_LANE_SUBAGENT, readLatestAssistantReply } from "openclaw/plugin-sdk";
-
-import { streamToTerminal, TerminalStreamer } from "./terminal-stream.js";
-import { runVerificationCommands } from "./reviewer.js";
-import { runBrowserChecks } from "./browser-check.js";
-
-// New comprehensive review modules
-import { spawnReviewer as spawnClaudeReviewer } from "./spawn-reviewer.js";
 import { generateAcceptanceCriteria } from "./acceptance-criteria.js";
-import { loadPastIssues, loadChecklist, saveFeedbackToMemory } from "./memory-integration.js";
-
-// Planning-with-files pattern
-import {
-  initializePlanningFiles,
-  buildPlanContext,
-  updateProgress,
-  updateTaskPlan,
-  checkThreeStrikes,
-  getEscalationNeeded,
-  readTaskPlan,
-  type PlanningFiles,
-  type TaskPlan,
-} from "./planning-files.js";
-
-// Project detection for multi-project workspaces
-import { detectProjectRoot, loadProjectContext } from "./project-detection.js";
-
-// Self-correction pattern (pro-workflow inspired)
-import { extractLessons, appendLearnedRules } from "./self-correction.js";
-
-// Video proof capture
-import { captureVideoProof } from "./video-proof.js";
-
-// Council mode for multi-LLM deliberation on complex tasks
-import { runCouncil, shouldAutoTriggerCouncil, type CouncilResult } from "./council-mode.js";
-
-// Task enhancement - auto-structures vague tasks with verification criteria
-import { enhanceTask, buildEnhancedTaskPrompt, type EnhancedTask } from "./task-enhancer.js";
-
-// Context loader - extracts and loads rich context from task (files, patterns, constraints)
-import { loadAndBuildContext, getContextSummary, type LoadedContext } from "./context-loader.js";
-
-// Workflow phases - Explore → Plan → Implement → Commit (DEFAULT workflow)
-import {
-  runExplorePhase,
-  runPlanPhase,
-  runCommitPhase,
-  buildImplementPrompt,
-  runFullWorkflow,
-  type WorkflowPhase,
-  type ExploreResult,
-  type PlanResult,
-  type ImplementResult,
-  type WorkflowContext,
-  type WorkflowResult,
-} from "./workflow-phases.js";
-
 // Antigravity integration (Google Cloud Code Assist)
 import {
   selectAntigravityModel,
@@ -67,7 +15,24 @@ import {
   handleAntigravityError,
   type AntigravityModel,
 } from "./antigravity-integration.js";
-
+// Best practices (from Claude Code docs) - 100% coverage
+import {
+  extractVerificationCriteria,
+  extractTaskContext,
+  buildEnhancedCoderPrompt,
+  detectFailurePatterns,
+  isSimpleTask,
+  // New best practices
+  generateInterviewQuestions,
+  assessContextHealth,
+  createSessionCheckpoint,
+  suggestCourseCorrection,
+  extractRichContent,
+  type VerificationCriteria,
+  type TaskContext,
+  type SessionCheckpoint,
+} from "./best-practices.js";
+import { runBrowserChecks } from "./browser-check.js";
 // Claude Code native integration
 import {
   createWorkflowTasks,
@@ -77,38 +42,52 @@ import {
   updateContextMetrics,
   getContextHealthStatus,
   resetContextMetrics,
-  buildParallelExploreAgents,
-  runParallelSubagents,
-  type SubagentResult,
 } from "./claude-code-integration.js";
-
-// Best practices (from Claude Code docs) - 100% coverage
+// Context loader - extracts and loads rich context from task (files, patterns, constraints)
+import { loadAndBuildContext, getContextSummary, type LoadedContext } from "./context-loader.js";
+// Council mode for multi-LLM deliberation on complex tasks
+import { runCouncil, shouldAutoTriggerCouncil, type CouncilResult } from "./council-mode.js";
+import { loadPastIssues, loadChecklist, saveFeedbackToMemory } from "./memory-integration.js";
+// Planning-with-files pattern
 import {
-  extractVerificationCriteria,
-  extractTaskContext,
-  buildEnhancedCoderPrompt,
-  buildEnhancedReviewerPrompt,
-  detectFailurePatterns,
-  isSimpleTask,
-  suggestWorkflowPhase,
-  // New best practices
-  generateInterviewQuestions,
-  buildInterviewPrompt,
-  buildCommitMessage,
-  assessContextHealth,
-  buildExplorationSubagentPrompt,
-  createSessionCheckpoint,
-  buildResumePrompt,
-  suggestCourseCorrection,
-  extractRichContent,
-  type VerificationCriteria,
-  type TaskContext,
-  type SessionCheckpoint,
-} from "./best-practices.js";
+  initializePlanningFiles,
+  buildPlanContext,
+  updateProgress,
+  updateTaskPlan,
+  checkThreeStrikes,
+  readTaskPlan,
+  type PlanningFiles,
+  type TaskPlan,
+} from "./planning-files.js";
+// Project detection for multi-project workspaces
+import { detectProjectRoot, loadProjectContext } from "./project-detection.js";
+import { runVerificationCommands } from "./reviewer.js";
+// Self-correction pattern (pro-workflow inspired)
+import { extractLessons, appendLearnedRules } from "./self-correction.js";
+// New comprehensive review modules
+import { spawnReviewer as spawnClaudeReviewer } from "./spawn-reviewer.js";
+// Task enhancement - auto-structures vague tasks with verification criteria
+import { enhanceTask, buildEnhancedTaskPrompt, type EnhancedTask } from "./task-enhancer.js";
+import { TerminalStreamer } from "./terminal-stream.js";
+// Video proof capture
+import { captureVideoProof } from "./video-proof.js";
+// Workflow phases - Explore → Plan → Implement → Commit (DEFAULT workflow)
+import {
+  runExplorePhase,
+  runPlanPhase,
+  runCommitPhase,
+  buildImplementPrompt,
+  type ExploreResult,
+  type PlanResult,
+  type ImplementResult,
+  type WorkflowContext,
+} from "./workflow-phases.js";
 
 // Helper to read task plan for 3-strike check
 async function readTaskPlanForCheck(planningFiles?: PlanningFiles): Promise<TaskPlan | null> {
-  if (!planningFiles) return null;
+  if (!planningFiles) {
+    return null;
+  }
   return readTaskPlan(planningFiles.taskPlanPath);
 }
 
@@ -222,7 +201,9 @@ export function applyHardApprovalGates(params: {
       (check) => configuredCommands.has(check.command) && !check.passed,
     );
     if (failedCommandChecks.length > 0) {
-      gateFailures.push(`Required command checks failed:\n${formatFailedChecks(failedCommandChecks)}`);
+      gateFailures.push(
+        `Required command checks failed:\n${formatFailedChecks(failedCommandChecks)}`,
+      );
     }
   }
 
@@ -258,7 +239,9 @@ export function applyHardApprovalGates(params: {
       runtime?.sessionEnd === true &&
       runtime?.pingPongOk !== false;
     if (!runtimeHealthy) {
-      gateFailures.push("Runtime session health check failed (session/websocket/ping lifecycle incomplete).");
+      gateFailures.push(
+        "Runtime session health check failed (session/websocket/ping lifecycle incomplete).",
+      );
     }
   }
 
@@ -286,7 +269,9 @@ export function applyHardApprovalGates(params: {
     });
     const consoleErrorCount = next.runtime?.consoleErrors ?? 0;
     if (consoleFailures.length > 0 || consoleErrorCount > 0) {
-      gateFailures.push("Console budget failed: runtime reported console errors/warnings above threshold.");
+      gateFailures.push(
+        "Console budget failed: runtime reported console errors/warnings above threshold.",
+      );
     }
   }
 
@@ -318,7 +303,11 @@ type ResolvedTarget = {
   commit?: string;
 };
 
-export function resolveBoundTarget(task: string, config: FeedbackLoopConfig, baseWorkspace: string): ResolvedTarget | undefined {
+export function resolveBoundTarget(
+  task: string,
+  config: FeedbackLoopConfig,
+  _baseWorkspace: string,
+): ResolvedTarget | undefined {
   const routing = config.routing;
   if (!routing?.requireRepoBinding) {
     return undefined;
@@ -332,8 +321,7 @@ export function resolveBoundTarget(task: string, config: FeedbackLoopConfig, bas
 
   const taskLower = task.toLowerCase();
   const branchFromTask =
-    task.match(/@([A-Za-z0-9._/-]+)/)?.[1] ??
-    task.match(/\bbranch\s+([A-Za-z0-9._/-]+)/i)?.[1];
+    task.match(/@([A-Za-z0-9._/-]+)/)?.[1] ?? task.match(/\bbranch\s+([A-Za-z0-9._/-]+)/i)?.[1];
   const explicitMentions = allowedTargets.filter((target) => {
     const alias = target.name.toLowerCase();
     const base = path.basename(target.path).toLowerCase();
@@ -404,10 +392,14 @@ type StructuredEvidence = {
 };
 
 function parseStructuredEvidence(raw?: string): StructuredEvidence | undefined {
-  if (!raw) return undefined;
+  if (!raw) {
+    return undefined;
+  }
   const start = raw.indexOf("{");
   const end = raw.lastIndexOf("}");
-  if (start < 0 || end <= start) return undefined;
+  if (start < 0 || end <= start) {
+    return undefined;
+  }
   try {
     const parsed = JSON.parse(raw.slice(start, end + 1)) as Record<string, unknown>;
     const target = parsed.target as Record<string, unknown> | undefined;
@@ -437,17 +429,24 @@ function parseStructuredEvidence(raw?: string): StructuredEvidence | undefined {
             geminiCloseReason:
               typeof runtime.geminiCloseReason === "string" ? runtime.geminiCloseReason : undefined,
             pingPongOk: runtime.pingPongOk === true,
-            authFailures: typeof runtime.authFailures === "number" ? runtime.authFailures : undefined,
-            consoleErrors: typeof runtime.consoleErrors === "number" ? runtime.consoleErrors : undefined,
+            authFailures:
+              typeof runtime.authFailures === "number" ? runtime.authFailures : undefined,
+            consoleErrors:
+              typeof runtime.consoleErrors === "number" ? runtime.consoleErrors : undefined,
           }
         : undefined,
       mediaMetrics: mediaMetrics
         ? {
-            reconnects: typeof mediaMetrics.reconnects === "number" ? mediaMetrics.reconnects : undefined,
+            reconnects:
+              typeof mediaMetrics.reconnects === "number" ? mediaMetrics.reconnects : undefined,
             frameGapMsP95:
-              typeof mediaMetrics.frameGapMsP95 === "number" ? mediaMetrics.frameGapMsP95 : undefined,
+              typeof mediaMetrics.frameGapMsP95 === "number"
+                ? mediaMetrics.frameGapMsP95
+                : undefined,
             audioChunkMsP95:
-              typeof mediaMetrics.audioChunkMsP95 === "number" ? mediaMetrics.audioChunkMsP95 : undefined,
+              typeof mediaMetrics.audioChunkMsP95 === "number"
+                ? mediaMetrics.audioChunkMsP95
+                : undefined,
             pingPongOk: mediaMetrics.pingPongOk === true,
             minMessagesPerMinute:
               typeof mediaMetrics.minMessagesPerMinute === "number"
@@ -459,7 +458,9 @@ function parseStructuredEvidence(raw?: string): StructuredEvidence | undefined {
         ? {
             duplicatesDetected: toolCalls.duplicatesDetected === true,
             duplicateSamples: Array.isArray(toolCalls.duplicateSamples)
-              ? toolCalls.duplicateSamples.filter((item): item is string => typeof item === "string")
+              ? toolCalls.duplicateSamples.filter(
+                  (item): item is string => typeof item === "string",
+                )
               : undefined,
           }
         : undefined,
@@ -523,7 +524,10 @@ export async function runFeedbackLoop(
     agentId: string;
     sessionKey: string;
     workspaceDir: string;
-    onUserInput?: () => Promise<{ action: "continue" | "message" | "approve" | "reject"; message?: string }>;
+    onUserInput?: () => Promise<{
+      action: "continue" | "message" | "approve" | "reject";
+      message?: string;
+    }>;
   },
 ): Promise<LoopResult> {
   const maxIterations = config.maxIterations ?? 5;
@@ -564,10 +568,13 @@ export async function runFeedbackLoop(
   const coderModel = config.coder ?? "openai-codex/gpt-5.2";
   const reviewerModel = config.reviewer ?? "anthropic/claude-sonnet-4-5";
   const antigravityEnabled = config.antigravity?.enabled !== false;
-  const antigravityFallbackModel = config.antigravity?.coderModel ?? "google-antigravity/claude-sonnet-4-5";
+  const antigravityFallbackModel =
+    config.antigravity?.coderModel ?? "google-antigravity/claude-sonnet-4-5";
 
   console.log(`[feedback-loop] DEFAULT WORKFLOW: Explore → Plan → Implement → Commit`);
-  console.log(`[feedback-loop] Coder: ${coderModel} → Fallback: ${antigravityFallbackModel} → Reviewer: ${reviewerModel}`);
+  console.log(
+    `[feedback-loop] Coder: ${coderModel} → Fallback: ${antigravityFallbackModel} → Reviewer: ${reviewerModel}`,
+  );
   terminal.log(`Coder: ${coderModel.split("/").pop()}`);
   if (antigravityEnabled) {
     terminal.log(`Fallback: ${antigravityFallbackModel.split("/").pop()} (Antigravity)`);
@@ -582,7 +589,7 @@ export async function runFeedbackLoop(
   if (boundTarget) {
     console.log(
       `[feedback-loop] Target binding locked: ${boundTarget.name} (${boundTarget.path})` +
-        `${boundTarget.expectedBranch ? ` @${boundTarget.expectedBranch}` : ""}`,
+        (boundTarget.expectedBranch ? ` @${boundTarget.expectedBranch}` : ""),
     );
     terminal.log(
       `Target locked: ${boundTarget.name}${boundTarget.expectedBranch ? ` @${boundTarget.expectedBranch}` : ""}`,
@@ -595,8 +602,11 @@ export async function runFeedbackLoop(
   const projectContext = await loadProjectContext(projectDetection);
 
   if (projectDetection.detected) {
-    const relativePath = effectiveWorkspace.replace(opts.workspaceDir, "").replace(/^\//, "") || ".";
-    console.log(`[feedback-loop] Project detected: ${effectiveWorkspace} (${projectDetection.method})`);
+    const relativePath =
+      effectiveWorkspace.replace(opts.workspaceDir, "").replace(/^\//, "") || ".";
+    console.log(
+      `[feedback-loop] Project detected: ${effectiveWorkspace} (${projectDetection.method})`,
+    );
     terminal.log(`Project detected: ${relativePath}`);
   } else {
     console.log(`[feedback-loop] Using base workspace: ${effectiveWorkspace}`);
@@ -609,7 +619,9 @@ export async function runFeedbackLoop(
   const targetEvidence: NonNullable<ReviewResult["target"]> = {
     repo: boundTarget?.name ?? path.basename(effectiveWorkspace),
     path: effectiveWorkspace,
-    branch: boundTarget?.branch ?? resolveGitRef(effectiveWorkspace, ["rev-parse", "--abbrev-ref", "HEAD"]),
+    branch:
+      boundTarget?.branch ??
+      resolveGitRef(effectiveWorkspace, ["rev-parse", "--abbrev-ref", "HEAD"]),
     commit: boundTarget?.commit ?? resolveGitRef(effectiveWorkspace, ["rev-parse", "HEAD"]),
   };
 
@@ -647,8 +659,10 @@ export async function runFeedbackLoop(
     terminal.log(`Task enhanced (${enhancedTask.method}): ${enhancedTask.complexity} complexity`);
 
     if (enhancedTask.verification.commands.length > 0) {
-      const requiredCmds = enhancedTask.verification.commands.filter(c => c.required);
-      terminal.log(`Verification: ${requiredCmds.length} required commands, ${enhancedTask.verification.browserUrls.length} URLs`);
+      const requiredCmds = enhancedTask.verification.commands.filter((c) => c.required);
+      terminal.log(
+        `Verification: ${requiredCmds.length} required commands, ${enhancedTask.verification.browserUrls.length} URLs`,
+      );
     }
     if (enhancedTask.verification.expectedOutcomes.length > 0) {
       terminal.log(`Expected outcomes: ${enhancedTask.verification.expectedOutcomes.length}`);
@@ -682,13 +696,19 @@ export async function runFeedbackLoop(
     console.log(`[feedback-loop] Loaded context: ${summary}`);
 
     if (loadedContext.fileContents.size > 0) {
-      terminal.log(`Pre-loaded ${loadedContext.fileContents.size} files (~${loadedContext.estimatedTokens} tokens)`);
+      terminal.log(
+        `Pre-loaded ${loadedContext.fileContents.size} files (~${loadedContext.estimatedTokens} tokens)`,
+      );
     }
     if (loadedContext.extracted.constraints.length > 0) {
-      terminal.log(`Constraints: ${loadedContext.extracted.constraints.map(c => c.description).join("; ")}`);
+      terminal.log(
+        `Constraints: ${loadedContext.extracted.constraints.map((c) => c.description).join("; ")}`,
+      );
     }
     if (loadedContext.extracted.examplePatterns.length > 0) {
-      terminal.log(`Patterns to follow: ${loadedContext.extracted.examplePatterns.map(p => p.file).join(", ")}`);
+      terminal.log(
+        `Patterns to follow: ${loadedContext.extracted.examplePatterns.map((p) => p.file).join(", ")}`,
+      );
     }
     if (loadedContext.extracted.symptom) {
       terminal.log(`Symptom: ${loadedContext.extracted.symptom.symptom.slice(0, 50)}...`);
@@ -709,14 +729,14 @@ export async function runFeedbackLoop(
   // Extract rich content (legacy - for backwards compatibility)
   const richContent = extractRichContent(task);
   if (richContent.length > 0 && !loadedContext) {
-    terminal.log(`Rich content: ${richContent.map(c => c.type).join(", ")}`);
+    terminal.log(`Rich content: ${richContent.map((c) => c.type).join(", ")}`);
   }
 
   // Generate interview questions for complex tasks (optional)
   if (!simpleTask && config.interview?.enabled) {
     const interviewQuestions = generateInterviewQuestions(task);
     if (interviewQuestions.length > 0) {
-      const highPriority = interviewQuestions.filter(q => q.priority === "high");
+      const highPriority = interviewQuestions.filter((q) => q.priority === "high");
       if (highPriority.length > 0) {
         terminal.log(`[Interview] ${highPriority.length} questions to clarify before coding`);
         // In interactive mode, these would be asked before proceeding
@@ -780,11 +800,9 @@ export async function runFeedbackLoop(
     const currentBranch = resolveGitRef(effectiveWorkspace, ["rev-parse", "--abbrev-ref", "HEAD"]);
     if (currentBranch) {
       checkpointBranch = `feedback-loop/checkpoint-${sessionId}`;
-      const branchRes = spawnSync(
-        "git",
-        ["-C", effectiveWorkspace, "branch", checkpointBranch],
-        { encoding: "utf-8" },
-      );
+      const branchRes = spawnSync("git", ["-C", effectiveWorkspace, "branch", checkpointBranch], {
+        encoding: "utf-8",
+      });
       if (branchRes.status === 0) {
         console.log(`[feedback-loop] Git checkpoint created: ${checkpointBranch}`);
         terminal.log(`Git checkpoint: ${checkpointBranch}`);
@@ -807,8 +825,10 @@ export async function runFeedbackLoop(
   console.log(`[feedback-loop] Starting EXPLORE phase...`);
 
   // Update task tracking
-  const exploreTaskId = workflowTasks.find(t => t.subject.includes("Explore"))?.id;
-  if (exploreTaskId) updateTask(exploreTaskId, { status: "in_progress" });
+  const exploreTaskId = workflowTasks.find((t) => t.subject.includes("Explore"))?.id;
+  if (exploreTaskId) {
+    updateTask(exploreTaskId, { status: "in_progress" });
+  }
 
   // Emit SubagentStart event
   await emitSubagentEvent({
@@ -860,7 +880,9 @@ export async function runFeedbackLoop(
     if (exploreResult.success) {
       terminal.log(`✓ Explore complete (${Math.round(exploreResult.duration / 1000)}s)`);
       if (exploreResult.artifacts.relevantFiles) {
-        terminal.log(`  Found ${exploreResult.artifacts.relevantFiles.split("\n").filter(Boolean).length} relevant files`);
+        terminal.log(
+          `  Found ${exploreResult.artifacts.relevantFiles.split("\n").filter(Boolean).length} relevant files`,
+        );
       }
     } else {
       terminal.log(`⚠ Explore phase had issues, continuing...`);
@@ -885,13 +907,14 @@ export async function runFeedbackLoop(
   // ============================================
   let councilResult: CouncilResult | undefined;
   const councilConfig = api.config.agents?.defaults?.council;
-  const isComplexTask = !simpleTask && (
-    (exploreResult?.artifacts.relevantFiles?.split("\n").filter(Boolean).length ?? 0) > 3 ||
-    enhancedTask?.complexity === "complex"
-  );
-  const councilAutoTriggered = councilConfig?.enabled && councilConfig.autoTrigger
-    ? shouldAutoTriggerCouncil(task, councilConfig)
-    : false;
+  const isComplexTask =
+    !simpleTask &&
+    ((exploreResult?.artifacts.relevantFiles?.split("\n").filter(Boolean).length ?? 0) > 3 ||
+      enhancedTask?.complexity === "complex");
+  const councilAutoTriggered =
+    councilConfig?.enabled && councilConfig.autoTrigger
+      ? shouldAutoTriggerCouncil(task, councilConfig)
+      : false;
 
   if (councilConfig?.enabled && (isComplexTask || councilAutoTriggered) && exploreResult?.success) {
     terminal.log("");
@@ -940,8 +963,10 @@ export async function runFeedbackLoop(
   console.log(`[feedback-loop] Starting PLAN phase...`);
 
   // Update task tracking
-  const planTaskId = workflowTasks.find(t => t.subject.includes("plan"))?.id;
-  if (planTaskId) updateTask(planTaskId, { status: "in_progress" });
+  const planTaskId = workflowTasks.find((t) => t.subject.includes("plan"))?.id;
+  if (planTaskId) {
+    updateTask(planTaskId, { status: "in_progress" });
+  }
 
   if (exploreResult) {
     // Emit SubagentStart event
@@ -960,12 +985,14 @@ export async function runFeedbackLoop(
         workflowContext.projectContext ?? "",
         `\n## COUNCIL SYNTHESIS (multi-LLM consensus, confidence: ${councilResult.confidence})\n${councilResult.synthesis}`,
         councilResult.agreements.length > 0
-          ? `\n### Agreements\n${councilResult.agreements.map(a => `- ${a}`).join("\n")}`
+          ? `\n### Agreements\n${councilResult.agreements.map((a) => `- ${a}`).join("\n")}`
           : "",
         councilResult.disagreements.length > 0
-          ? `\n### Disagreements (consider carefully)\n${councilResult.disagreements.map(d => `- ${d}`).join("\n")}`
+          ? `\n### Disagreements (consider carefully)\n${councilResult.disagreements.map((d) => `- ${d}`).join("\n")}`
           : "",
-      ].filter(Boolean).join("\n");
+      ]
+        .filter(Boolean)
+        .join("\n");
     }
 
     try {
@@ -992,7 +1019,9 @@ export async function runFeedbackLoop(
       if (planResult.success) {
         terminal.log(`✓ Plan created (${Math.round(planResult.duration / 1000)}s)`);
         if (planResult.artifacts.filesToModify) {
-          terminal.log(`  Files to modify: ${planResult.artifacts.filesToModify.split("\n").filter(Boolean).length}`);
+          terminal.log(
+            `  Files to modify: ${planResult.artifacts.filesToModify.split("\n").filter(Boolean).length}`,
+          );
         }
         if (planResult.artifacts.risks) {
           const riskCount = planResult.artifacts.risks.split("\n").filter(Boolean).length;
@@ -1009,7 +1038,9 @@ export async function runFeedbackLoop(
             terminal.log(`    ${line}`);
           }
           if (planResult.artifacts.implementationPlan.split("\n").length > 5) {
-            terminal.log(`    ... (${planResult.artifacts.implementationPlan.split("\n").length - 5} more steps)`);
+            terminal.log(
+              `    ... (${planResult.artifacts.implementationPlan.split("\n").length - 5} more steps)`,
+            );
           }
         }
       } else {
@@ -1041,8 +1072,10 @@ export async function runFeedbackLoop(
   console.log(`[feedback-loop] Starting IMPLEMENT phase (coder → reviewer loop)...`);
 
   // Update task tracking
-  const implementTaskId = workflowTasks.find(t => t.subject.includes("Implement"))?.id;
-  if (implementTaskId) updateTask(implementTaskId, { status: "in_progress" });
+  const implementTaskId = workflowTasks.find((t) => t.subject.includes("Implement"))?.id;
+  if (implementTaskId) {
+    updateTask(implementTaskId, { status: "in_progress" });
+  }
 
   // Update context metrics
   updateContextMetrics({ phase: "implement" });
@@ -1083,9 +1116,15 @@ export async function runFeedbackLoop(
     // Count recurring issues
     const issuePatterns = new Map<string, number>();
     for (const fb of feedbackHistory) {
-      if (/test.*fail/i.test(fb)) issuePatterns.set("test-failure", (issuePatterns.get("test-failure") ?? 0) + 1);
-      if (/type.*error/i.test(fb)) issuePatterns.set("type-error", (issuePatterns.get("type-error") ?? 0) + 1);
-      if (/not.*integrat/i.test(fb)) issuePatterns.set("integration", (issuePatterns.get("integration") ?? 0) + 1);
+      if (/test.*fail/i.test(fb)) {
+        issuePatterns.set("test-failure", (issuePatterns.get("test-failure") ?? 0) + 1);
+      }
+      if (/type.*error/i.test(fb)) {
+        issuePatterns.set("type-error", (issuePatterns.get("type-error") ?? 0) + 1);
+      }
+      if (/not.*integrat/i.test(fb)) {
+        issuePatterns.set("integration", (issuePatterns.get("integration") ?? 0) + 1);
+      }
     }
     const maxRecurrence = Math.max(0, ...issuePatterns.values());
 
@@ -1163,7 +1202,10 @@ export async function runFeedbackLoop(
     }
 
     // 3-Strike Check: if same action failed 3 times, rollback and pause
-    if (state.lastErrorAction && checkThreeStrikes(await readTaskPlanForCheck(state.planningFiles), state.lastErrorAction)) {
+    if (
+      state.lastErrorAction &&
+      checkThreeStrikes(await readTaskPlanForCheck(state.planningFiles), state.lastErrorAction)
+    ) {
       terminal.log(`⚠️ 3-Strike limit reached for: ${state.lastErrorAction}`);
 
       // Auto-rollback to checkpoint if available
@@ -1275,7 +1317,9 @@ export async function runFeedbackLoop(
 
         if (!browserResult.passed) {
           // Browser checks failed - override approval
-          console.log(`[feedback-loop] Browser verification FAILED: ${browserResult.errors.join("; ")}`);
+          console.log(
+            `[feedback-loop] Browser verification FAILED: ${browserResult.errors.join("; ")}`,
+          );
           terminal.log(`⚠ Browser checks failed:`);
           for (const err of browserResult.errors) {
             terminal.log(`  - ${err}`);
@@ -1285,8 +1329,9 @@ export async function runFeedbackLoop(
           if (reviewResult.approved) {
             console.log(`[feedback-loop] Overriding reviewer approval due to browser failures`);
             reviewResult.approved = false;
-            reviewResult.feedback = (reviewResult.feedback || "") +
-              `\n\n**Browser verification failed:**\n${browserResult.errors.map(e => `- ${e}`).join("\n")}`;
+            reviewResult.feedback =
+              (reviewResult.feedback || "") +
+              `\n\n**Browser verification failed:**\n${browserResult.errors.map((e) => `- ${e}`).join("\n")}`;
           }
           reviewResult.browserErrors = browserResult.errors;
           reviewResult.checks.push({
@@ -1308,13 +1353,10 @@ export async function runFeedbackLoop(
 
           // Collect screenshots from browser results if available
           const screenshotPaths = browserResult.results
-            .filter(r => r.screenshotPath)
-            .map(r => r.screenshotPath!);
+            .filter((r) => r.screenshotPath)
+            .map((r) => r.screenshotPath!);
           if (screenshotPaths.length > 0) {
-            reviewResult.screenshots = [
-              ...(reviewResult.screenshots || []),
-              ...screenshotPaths,
-            ];
+            reviewResult.screenshots = [...(reviewResult.screenshots || []), ...screenshotPaths];
           }
         }
       } else {
@@ -1323,7 +1365,9 @@ export async function runFeedbackLoop(
         const autoUrls = extractUrlsFromTask(state.task, coderResult.summary);
 
         if (autoUrls.length > 0) {
-          console.log(`[feedback-loop] Auto-detected ${autoUrls.length} URLs to verify: ${autoUrls.join(", ")}`);
+          console.log(
+            `[feedback-loop] Auto-detected ${autoUrls.length} URLs to verify: ${autoUrls.join(", ")}`,
+          );
           terminal.log(`Auto-verifying ${autoUrls.length} URLs...`);
 
           const autoBrowserConfig = {
@@ -1342,8 +1386,9 @@ export async function runFeedbackLoop(
 
             if (reviewResult.approved) {
               reviewResult.approved = false;
-              reviewResult.feedback = (reviewResult.feedback || "") +
-                `\n\n**Browser verification failed:**\n${browserResult.errors.map(e => `- ${e}`).join("\n")}`;
+              reviewResult.feedback =
+                (reviewResult.feedback || "") +
+                `\n\n**Browser verification failed:**\n${browserResult.errors.map((e) => `- ${e}`).join("\n")}`;
             }
             reviewResult.browserErrors = browserResult.errors;
             reviewResult.checks.push({
@@ -1368,7 +1413,11 @@ export async function runFeedbackLoop(
 
       // Run deterministic machine checks in addition to AI reviewer checks.
       if (config.commands?.length) {
-        const commandChecks = await runVerificationCommands(config.commands, effectiveWorkspace, terminal);
+        const commandChecks = await runVerificationCommands(
+          config.commands,
+          effectiveWorkspace,
+          terminal,
+        );
         for (const check of commandChecks) {
           const normalized: CheckResult = {
             ...check,
@@ -1384,7 +1433,10 @@ export async function runFeedbackLoop(
             reviewResult.runtime = { ...reviewResult.runtime, ...structuredEvidence.runtime };
           }
           if (structuredEvidence?.mediaMetrics) {
-            reviewResult.mediaMetrics = { ...reviewResult.mediaMetrics, ...structuredEvidence.mediaMetrics };
+            reviewResult.mediaMetrics = {
+              ...reviewResult.mediaMetrics,
+              ...structuredEvidence.mediaMetrics,
+            };
           }
           if (structuredEvidence?.toolCalls) {
             reviewResult.toolCalls = { ...reviewResult.toolCalls, ...structuredEvidence.toolCalls };
@@ -1426,9 +1478,15 @@ export async function runFeedbackLoop(
     reviewResult.mediaMetrics = reviewResult.mediaMetrics ?? {};
     reviewResult.toolCalls = reviewResult.toolCalls ?? { duplicatesDetected: false };
     reviewResult.artifacts = {
-      screenshots: unique([...(reviewResult.artifacts?.screenshots ?? []), ...(reviewResult.screenshots ?? [])]),
+      screenshots: unique([
+        ...(reviewResult.artifacts?.screenshots ?? []),
+        ...(reviewResult.screenshots ?? []),
+      ]),
       urlsTested: unique([...(reviewResult.artifacts?.urlsTested ?? []), ...urlsTested]),
-      commandSummaries: unique([...(reviewResult.artifacts?.commandSummaries ?? []), ...commandSummaries]),
+      commandSummaries: unique([
+        ...(reviewResult.artifacts?.commandSummaries ?? []),
+        ...commandSummaries,
+      ]),
       runtimeLogs: unique([...(reviewResult.artifacts?.runtimeLogs ?? []), ...runtimeLogs]),
     };
 
@@ -1564,7 +1622,9 @@ export async function runFeedbackLoop(
 
       // 3-Strike Warning in terminal
       if (state.consecutiveErrors >= 2) {
-        terminal.log(`⚠️ ${state.consecutiveErrors} consecutive failures - approaching 3-strike limit`);
+        terminal.log(
+          `⚠️ ${state.consecutiveErrors} consecutive failures - approaching 3-strike limit`,
+        );
       }
 
       // Detect failure patterns (best practices)
@@ -1640,13 +1700,17 @@ export async function runFeedbackLoop(
   terminal.log("━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━");
 
   // Update task tracking
-  const commitTaskId = workflowTasks.find(t => t.subject.includes("Commit"))?.id;
-  if (commitTaskId && state.approved) updateTask(commitTaskId, { status: "in_progress" });
+  const commitTaskId = workflowTasks.find((t) => t.subject.includes("Commit"))?.id;
+  if (commitTaskId && state.approved) {
+    updateTask(commitTaskId, { status: "in_progress" });
+  }
 
   // Update context metrics
   updateContextMetrics({ phase: "commit" });
 
-  let commitResult: { committed: boolean; message?: string; sha?: string; prUrl?: string } = { committed: false };
+  let commitResult: { committed: boolean; message?: string; sha?: string; prUrl?: string } = {
+    committed: false,
+  };
 
   if (state.approved && config.commit?.enabled && changedFiles.length > 0) {
     console.log(`[feedback-loop] Starting COMMIT phase...`);
@@ -1655,11 +1719,15 @@ export async function runFeedbackLoop(
     const implementResultForCommit: ImplementResult = {
       phase: "implement",
       success: true,
-      output: state.history.map(h => h.coderSummary).join("\n"),
+      output: state.history.map((h) => h.coderSummary).join("\n"),
       duration: 0,
       artifacts: {
         changedFiles: changedFiles.join("\n"),
-        testsRun: state.history.flatMap(h => h.reviewResult?.checks?.filter(c => c.passed).map(c => c.command) ?? []).join("\n"),
+        testsRun: state.history
+          .flatMap(
+            (h) => h.reviewResult?.checks?.filter((c) => c.passed).map((c) => c.command) ?? [],
+          )
+          .join("\n"),
         verificationStatus: "All checks passed",
       },
     };
@@ -1726,12 +1794,14 @@ export async function runFeedbackLoop(
   const contextHealth = getContextHealthStatus();
   if (contextHealth.status !== "healthy") {
     terminal.log("");
-    terminal.log(`  Context Health: ${contextHealth.status.toUpperCase()} (${Math.round(contextHealth.usagePercent)}%)`);
+    terminal.log(
+      `  Context Health: ${contextHealth.status.toUpperCase()} (${Math.round(contextHealth.usagePercent)}%)`,
+    );
   }
 
   // Show task tracking summary
   const allTasks = listTasks();
-  const completedTasks = allTasks.filter(t => t.status === "completed").length;
+  const completedTasks = allTasks.filter((t) => t.status === "completed").length;
   terminal.log(`  Tasks: ${completedTasks}/${allTasks.length} completed`);
   terminal.log("");
 
@@ -1739,12 +1809,12 @@ export async function runFeedbackLoop(
 
   // Collect all screenshots from review history as proof of verification
   const allScreenshots = state.history
-    .flatMap(h => h.reviewResult?.screenshots ?? [])
+    .flatMap((h) => h.reviewResult?.screenshots ?? [])
     .filter((s, i, arr) => arr.indexOf(s) === i);
 
   // Collect all video proof from review history
   const allVideoProof = state.history
-    .flatMap(h => h.reviewResult?.artifacts?.videoProof ?? [])
+    .flatMap((h) => h.reviewResult?.artifacts?.videoProof ?? [])
     .filter((v, i, arr) => arr.indexOf(v) === i);
 
   if (allScreenshots.length > 0) {
@@ -1795,7 +1865,23 @@ async function spawnCoder(
     workspaceDir: string;
   },
 ): Promise<CoderResult> {
-  const { task, enhancedTask, implementationPrompt, exploreContext, loadedContext, previousFeedback, userMessage, planContext, projectContext, verificationCriteria, taskContext, config, agentId, sessionKey, workspaceDir } = opts;
+  const {
+    task,
+    enhancedTask,
+    implementationPrompt,
+    exploreContext,
+    loadedContext,
+    previousFeedback,
+    userMessage,
+    planContext,
+    projectContext,
+    verificationCriteria,
+    taskContext,
+    config,
+    agentId,
+    sessionKey,
+    workspaceDir,
+  } = opts;
 
   // Build the coder prompt using best practices
   let basePrompt = `WORKSPACE: ${workspaceDir}\n\n`;
@@ -1883,7 +1969,9 @@ async function spawnCoder(
   const primaryResult = await runCoderWithModel(
     primaryModel,
     basePrompt,
-    isAntigravityPrimary ? buildAntigravityPromptAdditions("coder", primaryModel as AntigravityModel) : undefined,
+    isAntigravityPrimary
+      ? buildAntigravityPromptAdditions("coder", primaryModel as AntigravityModel)
+      : undefined,
     { agentId, sessionKey, workspaceDir },
   );
 
@@ -1894,12 +1982,16 @@ async function spawnCoder(
 
   // Check if Antigravity fallback is enabled
   if (!antigravityEnabled) {
-    console.log(`[feedback-loop] Codex failed (${primaryResult.error}), Antigravity fallback disabled`);
+    console.log(
+      `[feedback-loop] Codex failed (${primaryResult.error}), Antigravity fallback disabled`,
+    );
     return primaryResult;
   }
 
   // Primary (Codex) failed - try Antigravity fallback
-  console.log(`[feedback-loop] Codex failed (${primaryResult.error}), falling back to Antigravity: ${antigravityFallback}`);
+  console.log(
+    `[feedback-loop] Codex failed (${primaryResult.error}), falling back to Antigravity: ${antigravityFallback}`,
+  );
 
   // Handle the Codex error to determine if fallback is appropriate
   const errorHandling = handleAntigravityError(primaryResult.error);
@@ -1909,7 +2001,8 @@ async function spawnCoder(
   }
 
   // Add Antigravity-specific prompt additions
-  const antigravityPrompt = basePrompt + "\n\n" + buildAntigravityPromptAdditions("coder", antigravityFallback);
+  const antigravityPrompt =
+    basePrompt + "\n\n" + buildAntigravityPromptAdditions("coder", antigravityFallback);
 
   const fallbackResult = await runCoderWithModel(
     antigravityFallback,
@@ -1957,7 +2050,7 @@ async function runCoderWithModel(
     });
 
     // Step 2: SPAWN the coder agent (returns immediately with runId)
-    const spawnResponse = await callGateway({
+    const spawnResponse = (await callGateway({
       method: "agent",
       params: {
         message: fullPrompt,
@@ -1983,17 +2076,17 @@ Start your summary with "[TEST-FIRST]" if you followed this protocol, or "[DIREC
         label: "feedback-loop-coder",
       },
       timeoutMs: 10_000, // Just for the spawn, not the full run
-    }) as { runId?: string };
+    })) as { runId?: string };
 
     const runId = spawnResponse?.runId || stepIdem;
 
     // Step 3: WAIT for the coder to complete
     const waitTimeoutMs = 600_000; // 10 minutes max for coding
-    const waitResponse = await callGateway({
+    const waitResponse = (await callGateway({
       method: "agent.wait",
       params: { runId, timeoutMs: waitTimeoutMs },
       timeoutMs: waitTimeoutMs + 5_000, // Gateway timeout slightly longer
-    }) as { status?: string; error?: string };
+    })) as { status?: string; error?: string };
 
     if (waitResponse?.status !== "ok") {
       return {
@@ -2018,14 +2111,12 @@ Start your summary with "[TEST-FIRST]" if you followed this protocol, or "[DIREC
   }
 }
 
-async function runReview(
-  opts: {
-    coderResult: CoderResult;
-    config: FeedbackLoopConfig;
-    workspaceDir: string;
-    terminal: TerminalStreamer;
-  },
-): Promise<ReviewResult> {
+async function runReview(opts: {
+  coderResult: CoderResult;
+  config: FeedbackLoopConfig;
+  workspaceDir: string;
+  terminal: TerminalStreamer;
+}): Promise<ReviewResult> {
   const { config, workspaceDir, terminal } = opts;
   const checks: CheckResult[] = [];
   let browserErrors: string[] = [];
@@ -2112,7 +2203,8 @@ function extractUrlsFromTask(task: string, coderSummary: string): string[] {
   }
 
   // Detect route paths (e.g., "/test-scratchpad", "/api/health")
-  const routeMatches = combined.match(/(?:at |page |route |endpoint )[`"']?\/([a-zA-Z0-9_\-/]+)/gi) || [];
+  const routeMatches =
+    combined.match(/(?:at |page |route |endpoint )[`"']?\/([a-zA-Z0-9_\-/]+)/gi) || [];
   for (const match of routeMatches) {
     const routeMatch = match.match(/\/([a-zA-Z0-9_\-/]+)/);
     if (routeMatch) {
@@ -2125,9 +2217,9 @@ function extractUrlsFromTask(task: string, coderSummary: string): string[] {
   }
 
   // Detect test pages from file paths
-  const testPageMatches = combined.match(/pages\/([a-zA-Z0-9_\-]+)\.(tsx|jsx|ts|js)/gi) || [];
+  const testPageMatches = combined.match(/pages\/([a-zA-Z0-9_-]+)\.(tsx|jsx|ts|js)/gi) || [];
   for (const match of testPageMatches) {
-    const pageMatch = match.match(/pages\/([a-zA-Z0-9_\-]+)/);
+    const pageMatch = match.match(/pages\/([a-zA-Z0-9_-]+)/);
     if (pageMatch) {
       const pageName = pageMatch[1];
       const url = `http://localhost:3000/${pageName}`;
@@ -2152,7 +2244,10 @@ function extractUrlsFromTask(task: string, coderSummary: string): string[] {
   }
 
   // Always verify frontend if mentioned
-  if (/frontend|react|component|page|ui/i.test(combined) && !urls.some(u => u.includes("localhost:3000"))) {
+  if (
+    /frontend|react|component|page|ui/i.test(combined) &&
+    !urls.some((u) => u.includes("localhost:3000"))
+  ) {
     urls.push("http://localhost:3000");
   }
 

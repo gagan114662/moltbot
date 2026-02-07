@@ -148,11 +148,15 @@ function splitIntoGoalBlocks(content: string): string[] {
  */
 function parseGoalBlock(block: string): Goal | null {
   const lines = block.split("\n");
-  if (lines.length === 0) return null;
+  if (lines.length === 0) {
+    return null;
+  }
 
   // Parse header: ### [PRIORITY] Title
   const headerMatch = lines[0].match(/^### \[(\w+)\] (.+)$/);
-  if (!headerMatch) return null;
+  if (!headerMatch) {
+    return null;
+  }
 
   const priority = headerMatch[1].toUpperCase() as GoalPriority;
   const title = headerMatch[2].trim();
@@ -238,8 +242,12 @@ function parseGoalBlock(block: string): Goal | null {
   };
 
   // Add optional fields
-  if (metadata.Deadline) goal.deadline = metadata.Deadline;
-  if (metadata["Last Worked"]) goal.lastWorked = metadata["Last Worked"];
+  if (metadata.Deadline) {
+    goal.deadline = metadata.Deadline;
+  }
+  if (metadata["Last Worked"]) {
+    goal.lastWorked = metadata["Last Worked"];
+  }
   if (metadata.blockedBy) {
     goal.blockedBy = metadata.blockedBy.split(",").map((s) => s.trim());
   }
@@ -259,7 +267,9 @@ function parseGoalBlock(block: string): Goal | null {
 function parseConfigSection(content: string): GoalsFileConfig | undefined {
   // Extract YAML from code block
   const yamlMatch = content.match(/```ya?ml\n([\s\S]*?)\n```/);
-  if (!yamlMatch) return undefined;
+  if (!yamlMatch) {
+    return undefined;
+  }
 
   try {
     const parsed = YAML.parse(yamlMatch[1]) as GoalsFileConfig;
@@ -405,17 +415,29 @@ function isValidPriority(p: string): p is GoalPriority {
 
 function parseStatus(status: string | undefined): GoalStatus {
   const normalized = status?.toLowerCase();
-  if (normalized === "pending") return "pending";
-  if (normalized === "in_progress" || normalized === "in progress") return "in_progress";
-  if (normalized === "blocked") return "blocked";
-  if (normalized === "completed") return "completed";
+  if (normalized === "pending") {
+    return "pending";
+  }
+  if (normalized === "in_progress" || normalized === "in progress") {
+    return "in_progress";
+  }
+  if (normalized === "blocked") {
+    return "blocked";
+  }
+  if (normalized === "completed") {
+    return "completed";
+  }
   return "pending";
 }
 
 function parseProgress(progress: string | undefined): number {
-  if (!progress) return 0;
+  if (!progress) {
+    return 0;
+  }
   const match = progress.match(/(\d+)/);
-  if (!match) return 0;
+  if (!match) {
+    return 0;
+  }
   const value = parseInt(match[1], 10);
   return Math.max(0, Math.min(100, value));
 }
@@ -443,38 +465,52 @@ export function selectNextGoal(goals: Goal[]): Goal | null {
     (g) => (g.status === "pending" || g.status === "in_progress") && !isGoalBlocked(g, goals),
   );
 
-  if (workable.length === 0) return null;
+  if (workable.length === 0) {
+    return null;
+  }
 
   // Sort by priority (CRITICAL > HIGH > MEDIUM > LOW), then by deadline
   const priorityOrder: Record<GoalPriority, number> = { CRITICAL: -1, HIGH: 0, MEDIUM: 1, LOW: 2 };
 
-  workable.sort((a, b) => {
+  const sorted = workable.toSorted((a, b) => {
     // Priority first
     const priorityDiff = priorityOrder[a.priority] - priorityOrder[b.priority];
-    if (priorityDiff !== 0) return priorityDiff;
+    if (priorityDiff !== 0) {
+      return priorityDiff;
+    }
 
     // Then deadline (earlier first)
     if (a.deadline && b.deadline) {
       return new Date(a.deadline).getTime() - new Date(b.deadline).getTime();
     }
-    if (a.deadline) return -1;
-    if (b.deadline) return 1;
+    if (a.deadline) {
+      return -1;
+    }
+    if (b.deadline) {
+      return 1;
+    }
 
     // Then status (in_progress before pending)
-    if (a.status === "in_progress" && b.status !== "in_progress") return -1;
-    if (b.status === "in_progress" && a.status !== "in_progress") return 1;
+    if (a.status === "in_progress" && b.status !== "in_progress") {
+      return -1;
+    }
+    if (b.status === "in_progress" && a.status !== "in_progress") {
+      return 1;
+    }
 
     return 0;
   });
 
-  return workable[0];
+  return sorted[0];
 }
 
 /**
  * Check if a goal is blocked by other incomplete goals
  */
 function isGoalBlocked(goal: Goal, allGoals: Goal[]): boolean {
-  if (!goal.blockedBy || goal.blockedBy.length === 0) return false;
+  if (!goal.blockedBy || goal.blockedBy.length === 0) {
+    return false;
+  }
 
   for (const blockerId of goal.blockedBy) {
     const blocker = allGoals.find((g) => g.id === blockerId);
@@ -495,7 +531,9 @@ export function updateGoalProgress(
   updates: Partial<Goal>,
 ): GoalsFile {
   const newActiveGoals = goalsFile.activeGoals.map((goal) => {
-    if (goal.id !== goalId) return goal;
+    if (goal.id !== goalId) {
+      return goal;
+    }
 
     const updated = { ...goal, ...updates };
 
@@ -559,7 +597,9 @@ export function markSubtasksCompleted(goal: Goal, completedSubtasks: string[]): 
  * Check if all success criteria are met
  */
 export function areAllCriteriaMet(goal: Goal): boolean {
-  if (goal.successCriteria.length === 0) return false;
+  if (goal.successCriteria.length === 0) {
+    return false;
+  }
   return goal.successCriteria.every((c) => c.completed);
 }
 

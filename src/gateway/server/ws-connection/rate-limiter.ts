@@ -140,7 +140,9 @@ export class ConnectionRateLimiter {
 
   private refillTokens(now: number): void {
     const elapsed = now - this.lastRefillMs;
-    if (elapsed <= 0) return;
+    if (elapsed <= 0) {
+      return;
+    }
 
     const tokensPerMs = this.config.messagesPerSecond / 1000;
     const newTokens = elapsed * tokensPerMs;
@@ -159,7 +161,9 @@ export class ConnectionRateLimiter {
 
   private calculateCurrentRate(now: number): number {
     const elapsed = now - this.windowStartMs;
-    if (elapsed <= 0) return 0;
+    if (elapsed <= 0) {
+      return 0;
+    }
     return (this.requestCount / elapsed) * 1000;
   }
 }

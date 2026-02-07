@@ -8,7 +8,6 @@
 import {
   SandboxAgent,
   type UniversalEvent,
-  type UniversalItem,
   type ContentPart,
   type ItemEventData,
   type PermissionEventData,
@@ -46,9 +45,7 @@ export interface RunTaskOptions {
   sessionId: string;
   workingDirectory?: string;
   onEvent?: (event: UniversalEvent) => Promise<void>;
-  onPermissionRequest?: (
-    event: UniversalEvent,
-  ) => Promise<{ approved: boolean; reason?: string }>;
+  onPermissionRequest?: (event: UniversalEvent) => Promise<{ approved: boolean; reason?: string }>;
   onQuestion?: (event: UniversalEvent) => Promise<string[][]>;
   timeoutMs?: number;
 }
@@ -61,10 +58,7 @@ export class SandboxAgentManager {
     string,
     (event: UniversalEvent) => Promise<{ approved: boolean; reason?: string }>
   > = new Map();
-  private questionHandlers: Map<
-    string,
-    (event: UniversalEvent) => Promise<string[][]>
-  > = new Map();
+  private questionHandlers: Map<string, (event: UniversalEvent) => Promise<string[][]>> = new Map();
 
   constructor(options: SandboxAgentManagerOptions) {
     this.options = options;
@@ -74,7 +68,9 @@ export class SandboxAgentManager {
    * Initialize the sandbox-agent client
    */
   async initialize(): Promise<void> {
-    if (this.client) return;
+    if (this.client) {
+      return;
+    }
 
     if (this.options.mode === "embedded") {
       // Start embedded server
@@ -160,7 +156,9 @@ export class SandboxAgentManager {
           }
         }
       } finally {
-        if (timeoutId) clearTimeout(timeoutId);
+        if (timeoutId) {
+          clearTimeout(timeoutId);
+        }
       }
 
       session.status = "completed";
@@ -194,21 +192,24 @@ export class SandboxAgentManager {
   /**
    * Handle special events like permission requests and questions
    */
-  private async handleEvent(
-    sessionId: string,
-    event: UniversalEvent,
-  ): Promise<void> {
-    if (!this.client) return;
+  private async handleEvent(sessionId: string, event: UniversalEvent): Promise<void> {
+    if (!this.client) {
+      return;
+    }
 
     if (event.type === "permission.requested") {
       const handler = this.permissionHandlers.get(sessionId);
       if (handler) {
         const session = this.sessions.get(sessionId);
-        if (session) session.status = "waiting_approval";
+        if (session) {
+          session.status = "waiting_approval";
+        }
 
         const result = await handler(event);
 
-        if (session) session.status = "running";
+        if (session) {
+          session.status = "running";
+        }
 
         const permData = event.data as PermissionEventData;
         await this.client.replyPermission(sessionId, permData.permission_id, {
@@ -234,9 +235,7 @@ export class SandboxAgentManager {
    */
   private generateSummary(events: UniversalEvent[]): string {
     // Find completed items with assistant role
-    const completedItems = events.filter(
-      (e) => e.type === "item.completed",
-    );
+    const completedItems = events.filter((e) => e.type === "item.completed");
 
     // Get the last assistant message
     for (let i = completedItems.length - 1; i >= 0; i--) {
@@ -277,7 +276,9 @@ export class SandboxAgentManager {
    */
   async listAgents(): Promise<string[]> {
     await this.initialize();
-    if (!this.client) return [];
+    if (!this.client) {
+      return [];
+    }
 
     const response = await this.client.listAgents();
     return response.agents.map((a) => a.id);

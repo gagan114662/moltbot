@@ -58,7 +58,9 @@ export async function detectProjectRoot(
 
   // Sort by score (highest first), then by path length (more specific first)
   matches.sort((a, b) => {
-    if (b.score !== a.score) return b.score - a.score;
+    if (b.score !== a.score) {
+      return b.score - a.score;
+    }
     return b.subdir.length - a.subdir.length;
   });
 
@@ -142,7 +144,9 @@ function extractPathHints(task: string, baseWorkspace: string): string[] {
 
   for (const hint of hints) {
     const normalized = path.normalize(hint);
-    if (seen.has(normalized)) continue;
+    if (seen.has(normalized)) {
+      continue;
+    }
     seen.add(normalized);
 
     // Find nearest project root
@@ -154,16 +158,13 @@ function extractPathHints(task: string, baseWorkspace: string): string[] {
   }
 
   // Sort by path length (most specific first)
-  return validHints.sort((a, b) => b.length - a.length);
+  return validHints.toSorted((a, b) => b.length - a.length);
 }
 
 /**
  * Find the nearest parent directory that looks like a project root.
  */
-function findNearestProjectRoot(
-  targetPath: string,
-  stopAt: string,
-): string | undefined {
+function findNearestProjectRoot(targetPath: string, stopAt: string): string | undefined {
   let current = path.normalize(targetPath);
   const normalizedStop = path.normalize(stopAt);
 
@@ -174,7 +175,9 @@ function findNearestProjectRoot(
       return current;
     }
     const parent = path.dirname(current);
-    if (parent === current) break;
+    if (parent === current) {
+      break;
+    }
     current = parent;
   }
 
@@ -185,30 +188,34 @@ function findNearestProjectRoot(
  * Check if task mentions a specific project by name.
  * Returns a score: 0 = no match, 1 = partial match, 2 = normalized match, 3 = exact match
  */
-function taskMentionsProject(
-  task: string,
-  projectPath: string,
-  baseWorkspace: string,
-): number {
+function taskMentionsProject(task: string, projectPath: string, baseWorkspace: string): number {
   const relativePath = path.relative(baseWorkspace, projectPath);
   const projectName = relativePath.split(path.sep)[0];
-  if (!projectName) return 0;
+  if (!projectName) {
+    return 0;
+  }
 
   const taskLower = task.toLowerCase();
   const nameLower = projectName.toLowerCase();
 
   // Exact match (highest priority) - full project name appears in task
-  if (taskLower.includes(nameLower)) return 3;
+  if (taskLower.includes(nameLower)) {
+    return 3;
+  }
 
   // Normalized match (medium priority) - hyphens/underscores removed
   const nameNormalized = nameLower.replace(/[-_]/g, "");
   const taskNormalized = taskLower.replace(/[-_]/g, "");
-  if (taskNormalized.includes(nameNormalized)) return 2;
+  if (taskNormalized.includes(nameNormalized)) {
+    return 2;
+  }
 
   // Partial match (lowest priority) - compound name parts
   const parts = nameLower.split(/[-_]/);
   for (const part of parts) {
-    if (part.length > 3 && taskLower.includes(part)) return 1;
+    if (part.length > 3 && taskLower.includes(part)) {
+      return 1;
+    }
   }
 
   return 0;
@@ -224,9 +231,15 @@ async function findProjectSubdirs(baseWorkspace: string): Promise<string[]> {
     const entries = await fs.readdir(baseWorkspace, { withFileTypes: true });
 
     for (const entry of entries) {
-      if (!entry.isDirectory()) continue;
-      if (entry.name.startsWith(".")) continue;
-      if (entry.name === "node_modules") continue;
+      if (!entry.isDirectory()) {
+        continue;
+      }
+      if (entry.name.startsWith(".")) {
+        continue;
+      }
+      if (entry.name === "node_modules") {
+        continue;
+      }
 
       const subdir = path.join(baseWorkspace, entry.name);
       projects.push(subdir);

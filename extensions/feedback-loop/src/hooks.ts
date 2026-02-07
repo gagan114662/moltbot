@@ -1,7 +1,6 @@
 import type { OpenClawPluginApi, FeedbackLoopConfig } from "openclaw/plugin-sdk";
-
-import { loadLearnedRules } from "./self-correction.js";
 import { checkCodeQuality, formatQualityReport, EditTracker } from "./quality-gate.js";
+import { loadLearnedRules } from "./self-correction.js";
 
 const CODING_TASK_PATTERNS = [
   /\b(fix|debug|resolve|patch)\b.*\b(bug|error|issue|crash|problem)/i,
@@ -26,7 +25,11 @@ function isCodingTask(message: string): { isCoding: boolean; confidence: number;
 
   for (const pattern of NON_CODING_PATTERNS) {
     if (pattern.test(trimmed)) {
-      return { isCoding: false, confidence: 0.8, reason: `Matches non-coding pattern: ${pattern.source.slice(0, 30)}` };
+      return {
+        isCoding: false,
+        confidence: 0.8,
+        reason: `Matches non-coding pattern: ${pattern.source.slice(0, 30)}`,
+      };
     }
   }
 
@@ -41,7 +44,11 @@ function isCodingTask(message: string): { isCoding: boolean; confidence: number;
     return { isCoding: true, confidence: 0.9, reason: `Matches ${matchCount} coding patterns` };
   }
   if (matchCount === 1 && trimmed.length > 30) {
-    return { isCoding: true, confidence: 0.7, reason: "Single coding pattern with sufficient context" };
+    return {
+      isCoding: true,
+      confidence: 0.7,
+      reason: "Single coding pattern with sufficient context",
+    };
   }
   return { isCoding: false, confidence: 0.5, reason: "No coding patterns detected" };
 }
@@ -53,7 +60,7 @@ export function registerFeedbackLoopHooks(api: OpenClawPluginApi) {
   api.on(
     "before_agent_start",
     async (event, ctx) => {
-      const config = getFeedbackLoopConfig(api) as FeedbackLoopHookConfig | undefined;
+      const config = getFeedbackLoopConfig(api);
       if (!config?.enabled) {
         return;
       }
@@ -84,15 +91,13 @@ You are the REVIEWER in an iterative feedback loop.
 
       const autoTrigger = config.autoTrigger ?? { enabled: false };
       const latestUserMessage = Array.isArray(event.messages)
-        ? [...event.messages]
-            .toReversed()
-            .find((message) => {
-              if (!message || typeof message !== "object") {
-                return false;
-              }
-              const role = (message as { role?: unknown }).role;
-              return role === "user";
-            })
+        ? [...event.messages].toReversed().find((message) => {
+            if (!message || typeof message !== "object") {
+              return false;
+            }
+            const role = (message as { role?: unknown }).role;
+            return role === "user";
+          })
         : undefined;
       const userMessage =
         latestUserMessage && typeof latestUserMessage === "object"
@@ -129,7 +134,7 @@ For non-coding or quick informational requests, respond normally without invokin
   api.on(
     "agent_end",
     async (_event, ctx) => {
-      const config = getFeedbackLoopConfig(api) as FeedbackLoopHookConfig | undefined;
+      const config = getFeedbackLoopConfig(api);
       if (!config?.enabled) {
         return;
       }
@@ -195,7 +200,9 @@ For non-coding or quick informational requests, respond normally without invokin
       try {
         const rules = await loadLearnedRules(learnedPath);
         if (rules.length > 0) {
-          console.log(`[feedback-loop] Loaded ${rules.length} learned rules from previous sessions`);
+          console.log(
+            `[feedback-loop] Loaded ${rules.length} learned rules from previous sessions`,
+          );
         }
       } catch {
         // No learned rules yet.

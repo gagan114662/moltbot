@@ -29,7 +29,6 @@ import {
   serializeGoalsFile,
   updateGoalProgress,
   markSubtasksCompleted,
-  areAllCriteriaMet,
 } from "./parser.js";
 
 // Video proof capture types (from feedback-loop extension)
@@ -43,7 +42,9 @@ let captureVideoProof: VideoProofCaptureFn | null = null;
 
 // Lazy load video proof to avoid compile-time rootDir issues
 async function loadVideoProofCapture(): Promise<VideoProofCaptureFn | null> {
-  if (captureVideoProof) return captureVideoProof;
+  if (captureVideoProof) {
+    return captureVideoProof;
+  }
   try {
     // Dynamic import at runtime - path resolved relative to dist/
     const modPath = new URL("../../extensions/feedback-loop/src/video-proof.js", import.meta.url)
@@ -73,7 +74,7 @@ const DEFAULT_MAX_WORK_DURATION_MS = 10 * 60 * 1000;
  */
 export function resolveGoalWorkConfig(
   cfg: OpenClawConfig,
-  agentId?: string,
+  _agentId?: string,
 ): GoalWorkConfig | undefined {
   return cfg.agents?.defaults?.goals;
 }
@@ -95,7 +96,9 @@ export function resolveGoalWorkIntervalMs(
 ): number | null {
   const raw =
     goalsCfg?.workInterval ?? cfg.agents?.defaults?.goals?.workInterval ?? DEFAULT_WORK_INTERVAL;
-  if (!raw) return null;
+  if (!raw) {
+    return null;
+  }
   try {
     const ms = parseDurationMs(raw.trim(), { defaultUnit: "m" });
     return ms > 0 ? ms : null;
@@ -112,7 +115,9 @@ export function resolveMaxWorkDurationMs(cfg: OpenClawConfig, goalsCfg?: GoalWor
     goalsCfg?.maxWorkDuration ??
     cfg.agents?.defaults?.goals?.maxWorkDuration ??
     DEFAULT_MAX_WORK_DURATION;
-  if (!raw) return DEFAULT_MAX_WORK_DURATION_MS;
+  if (!raw) {
+    return DEFAULT_MAX_WORK_DURATION_MS;
+  }
   try {
     const ms = parseDurationMs(raw.trim(), { defaultUnit: "m" });
     return ms > 0 ? ms : DEFAULT_MAX_WORK_DURATION_MS;
@@ -128,13 +133,19 @@ export function resolveMaxWorkDurationMs(cfg: OpenClawConfig, goalsCfg?: GoalWor
 const TIME_PATTERN = /^([01]\d|2[0-3]|24):([0-5]\d)$/;
 
 function parseTimeToMinutes(raw?: string, allow24 = false): number | null {
-  if (!raw || !TIME_PATTERN.test(raw)) return null;
+  if (!raw || !TIME_PATTERN.test(raw)) {
+    return null;
+  }
   const [hourStr, minuteStr] = raw.split(":");
   const hour = Number(hourStr);
   const minute = Number(minuteStr);
-  if (!Number.isFinite(hour) || !Number.isFinite(minute)) return null;
+  if (!Number.isFinite(hour) || !Number.isFinite(minute)) {
+    return null;
+  }
   if (hour === 24) {
-    if (!allow24 || minute !== 0) return null;
+    if (!allow24 || minute !== 0) {
+      return null;
+    }
     return 24 * 60;
   }
   return hour * 60 + minute;
@@ -173,7 +184,9 @@ function resolveMinutesInTimeZone(nowMs: number, timeZone: string): number | nul
     }
     const hour = Number(map.hour);
     const minute = Number(map.minute);
-    if (!Number.isFinite(hour) || !Number.isFinite(minute)) return null;
+    if (!Number.isFinite(hour) || !Number.isFinite(minute)) {
+      return null;
+    }
     return hour * 60 + minute;
   } catch {
     return null;
@@ -189,16 +202,24 @@ export function isWithinQuietHours(
   nowMs?: number,
 ): boolean {
   const quietHours = goalsCfg?.quietHours;
-  if (!quietHours) return false;
+  if (!quietHours) {
+    return false;
+  }
 
   const startMin = parseTimeToMinutes(quietHours.start, false);
   const endMin = parseTimeToMinutes(quietHours.end, true);
-  if (startMin === null || endMin === null) return false;
-  if (startMin === endMin) return false;
+  if (startMin === null || endMin === null) {
+    return false;
+  }
+  if (startMin === endMin) {
+    return false;
+  }
 
   const timeZone = resolveQuietHoursTimezone(cfg, quietHours.timezone);
   const currentMin = resolveMinutesInTimeZone(nowMs ?? Date.now(), timeZone);
-  if (currentMin === null) return false;
+  if (currentMin === null) {
+    return false;
+  }
 
   // Handle overnight ranges (e.g., 22:00 to 08:00)
   if (endMin < startMin) {
@@ -323,7 +344,7 @@ function formatProgressEntry(entry: ProgressEntry): string {
 /**
  * Build the prompt for working on a goal
  */
-function buildGoalWorkPrompt(goal: Goal, goalsFile: GoalsFile): string {
+function buildGoalWorkPrompt(goal: Goal, _goalsFile: GoalsFile): string {
   const lines: string[] = [];
 
   lines.push(`You are working autonomously on a goal. Work toward completing this goal.`);
@@ -676,12 +697,18 @@ export function shouldRunGoalWork(
   nowMs?: number,
 ): boolean {
   const goalsCfg = resolveGoalWorkConfig(cfg);
-  if (!isGoalWorkEnabled(cfg)) return false;
+  if (!isGoalWorkEnabled(cfg)) {
+    return false;
+  }
 
   const intervalMs = resolveGoalWorkIntervalMs(cfg, goalsCfg);
-  if (!intervalMs) return false;
+  if (!intervalMs) {
+    return false;
+  }
 
-  if (lastRunMs === undefined) return true;
+  if (lastRunMs === undefined) {
+    return true;
+  }
 
   const now = nowMs ?? Date.now();
   return now - lastRunMs >= intervalMs;

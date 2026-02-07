@@ -10,9 +10,8 @@
  *   - Edge cases to consider
  */
 
-import crypto from "node:crypto";
-
 import type { FeedbackLoopConfig } from "openclaw/plugin-sdk";
+import crypto from "node:crypto";
 import { callGateway, AGENT_LANE_SUBAGENT, readLatestAssistantReply } from "openclaw/plugin-sdk";
 
 export interface EnhancedTask {
@@ -217,20 +216,11 @@ function applyRuleBasedEnhancement(task: string, workspaceDir: string): Enhanced
         "Props are handled correctly",
         "Component is responsive",
       ],
-      edgeCases: [
-        "Missing/undefined props",
-        "Empty data state",
-        "Loading state",
-        "Error state",
-      ],
+      edgeCases: ["Missing/undefined props", "Empty data state", "Loading state", "Error state"],
     },
     {
       pattern: /\b(list|table|grid)\b/i,
-      outcomes: [
-        "Items display correctly",
-        "Pagination/scrolling works",
-        "Empty state handled",
-      ],
+      outcomes: ["Items display correctly", "Pagination/scrolling works", "Empty state handled"],
       edgeCases: [
         "Zero items",
         "Large number of items (100+)",
@@ -246,11 +236,7 @@ function applyRuleBasedEnhancement(task: string, workspaceDir: string): Enhanced
         "Focus is trapped inside modal",
         "Escape key closes modal",
       ],
-      edgeCases: [
-        "Clicking outside modal",
-        "Multiple modals stacking",
-        "Form inside modal",
-      ],
+      edgeCases: ["Clicking outside modal", "Multiple modals stacking", "Form inside modal"],
     },
     {
       pattern: /\b(fix|bug|error|issue)\b/i,
@@ -339,7 +325,7 @@ async function aiEnhanceTask(
   });
 
   // Spawn enhancer
-  const spawnResponse = await callGateway({
+  const spawnResponse = (await callGateway({
     method: "agent",
     params: {
       message: prompt,
@@ -352,17 +338,17 @@ async function aiEnhanceTask(
       label: "feedback-loop-enhancer",
     },
     timeoutMs: 10_000,
-  }) as { runId?: string };
+  })) as { runId?: string };
 
   const runId = spawnResponse?.runId || stepIdem;
 
   // Wait for response (short timeout)
   const waitTimeoutMs = 60_000; // 1 minute max
-  const waitResponse = await callGateway({
+  const waitResponse = (await callGateway({
     method: "agent.wait",
     params: { runId, timeoutMs: waitTimeoutMs },
     timeoutMs: waitTimeoutMs + 5_000,
-  }) as { status?: string; error?: string };
+  })) as { status?: string; error?: string };
 
   if (waitResponse?.status !== "ok") {
     throw new Error(`Enhancer failed: ${waitResponse?.error ?? "timeout"}`);
@@ -465,7 +451,11 @@ Enhance this task to make it SPECIFIC and TESTABLE. Return a JSON object.`;
   return prompt;
 }
 
-function parseEnhancerResponse(response: string | undefined, originalTask: string, fallback: EnhancedTask): EnhancedTask {
+function parseEnhancerResponse(
+  response: string | undefined,
+  originalTask: string,
+  fallback: EnhancedTask,
+): EnhancedTask {
   if (!response) {
     return fallback;
   }
@@ -550,8 +540,12 @@ function assessComplexity(task: string): "simple" | "medium" | "complex" {
   const complexCount = complexIndicators.filter((p) => p.test(lower)).length;
   const simpleCount = simpleIndicators.filter((p) => p.test(lower)).length;
 
-  if (complexCount >= 2 || task.length > 500) return "complex";
-  if (simpleCount >= 2 && task.length < 100) return "simple";
+  if (complexCount >= 2 || task.length > 500) {
+    return "complex";
+  }
+  if (simpleCount >= 2 && task.length < 100) {
+    return "simple";
+  }
   return "medium";
 }
 
@@ -559,12 +553,7 @@ function assessComplexity(task: string): "simple" | "medium" | "complex" {
  * Build a prompt section with enhanced task details
  */
 export function buildEnhancedTaskPrompt(enhanced: EnhancedTask): string {
-  const lines = [
-    "## ENHANCED TASK",
-    "",
-    enhanced.structured,
-    "",
-  ];
+  const lines = ["## ENHANCED TASK", "", enhanced.structured, ""];
 
   if (enhanced.verification.successCriteria.length > 0) {
     lines.push("## SUCCESS CRITERIA (verify ALL before marking done)");

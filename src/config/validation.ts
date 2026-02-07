@@ -107,7 +107,9 @@ function collectModelRefCandidates(config: OpenClawConfig): ModelRefIssueCandida
     }
   };
   const pushMany = (pathPrefix: string, values: string[] | undefined) => {
-    if (!Array.isArray(values)) return;
+    if (!Array.isArray(values)) {
+      return;
+    }
     values.forEach((value, index) => push(`${pathPrefix}.${index}`, value));
   };
 

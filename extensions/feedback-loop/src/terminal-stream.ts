@@ -119,7 +119,7 @@ export class TerminalStreamer {
   }
 
   approved() {
-    this.buffer.push(`${BOX_SIDE}`);
+    this.buffer.push(BOX_SIDE);
     this.buffer.push(`${BOX_SIDE} ✓ APPROVED - All checks passing`);
     this.buffer.push(`${BOX_BOTTOM}${LINE}`);
     // Clear status and flush
@@ -128,7 +128,7 @@ export class TerminalStreamer {
   }
 
   feedback(feedback: string) {
-    this.buffer.push(`${BOX_SIDE}`);
+    this.buffer.push(BOX_SIDE);
     this.buffer.push(`${BOX_SIDE} ✗ FEEDBACK TO CODEX:`);
     const lines = feedback.split("\n");
     for (const line of lines) {

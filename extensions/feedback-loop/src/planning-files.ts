@@ -223,7 +223,9 @@ export async function updateTaskPlan(
   }
   if (update.addError) {
     // 3-Strike tracking: increment attempts for same action
-    const existing = current.errors.find((e) => e.action === update.addError!.action && !e.resolution);
+    const existing = current.errors.find(
+      (e) => e.action === update.addError!.action && !e.resolution,
+    );
     if (existing) {
       existing.attempts++;
       existing.error = update.addError.error;
@@ -308,7 +310,9 @@ export async function updateProgress(
  * Check if we've hit the 3-strike limit for an action.
  */
 export function checkThreeStrikes(plan: TaskPlan | null, action: string): boolean {
-  if (!plan) return false;
+  if (!plan) {
+    return false;
+  }
   const error = plan.errors.find((e) => e.action === action && !e.resolution);
   return error !== undefined && error.attempts >= 3;
 }
@@ -317,7 +321,9 @@ export function checkThreeStrikes(plan: TaskPlan | null, action: string): boolea
  * Get unresolved errors with 3+ attempts (for escalation).
  */
 export function getEscalationNeeded(plan: TaskPlan | null): ErrorEntry[] {
-  if (!plan) return [];
+  if (!plan) {
+    return [];
+  }
   return plan.errors.filter((e) => e.attempts >= 3 && !e.resolution);
 }
 
@@ -424,7 +430,12 @@ ${plan.acceptanceCriteria?.map((c) => `- [ ] ${c}`).join("\n") ?? "None specifie
 ## Decisions
 ${
   plan.decisions.length > 0
-    ? plan.decisions.map((d) => `- **${d.timestamp}**: ${d.decision}\n  - Context: ${d.context}\n  - Reasoning: ${d.reasoning}`).join("\n")
+    ? plan.decisions
+        .map(
+          (d) =>
+            `- **${d.timestamp}**: ${d.decision}\n  - Context: ${d.context}\n  - Reasoning: ${d.reasoning}`,
+        )
+        .join("\n")
     : "No decisions recorded yet."
 }
 

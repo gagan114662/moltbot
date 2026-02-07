@@ -226,17 +226,21 @@ export function extractVerificationCriteria(task: string): VerificationCriteria 
 /**
  * Extract task context from description
  */
-export function extractTaskContext(task: string, projectContext?: string): TaskContext {
+export function extractTaskContext(task: string, _projectContext?: string): TaskContext {
   const context: TaskContext = {};
 
   // Extract file paths mentioned
-  const fileMatches = task.match(/(?:in |at |file |path )?([a-zA-Z0-9_\-./]+\.(ts|tsx|js|jsx|py|go|rs|vue|svelte))/g);
+  const fileMatches = task.match(
+    /(?:in |at |file |path )?([a-zA-Z0-9_\-./]+\.(ts|tsx|js|jsx|py|go|rs|vue|svelte))/g,
+  );
   if (fileMatches) {
     context.targetFiles = fileMatches.map((m) => m.replace(/^(?:in |at |file |path )/, ""));
   }
 
   // Extract component/function names that might indicate patterns
-  const componentMatches = task.match(/(?:like |similar to |following |pattern of )([A-Z][a-zA-Z]+(?:Component|Widget|Module|Service)?)/g);
+  const componentMatches = task.match(
+    /(?:like |similar to |following |pattern of )([A-Z][a-zA-Z]+(?:Component|Widget|Module|Service)?)/g,
+  );
   if (componentMatches) {
     context.examplePatterns = componentMatches.map((m) => ({
       file: m.replace(/^(?:like |similar to |following |pattern of )/, ""),
@@ -246,7 +250,10 @@ export function extractTaskContext(task: string, projectContext?: string): TaskC
 
   // Extract constraints
   const constraintPatterns = [
-    { pattern: /without (?:using )?(?:any )?(?:external )?(?:libraries|dependencies)/i, constraint: "No external dependencies" },
+    {
+      pattern: /without (?:using )?(?:any )?(?:external )?(?:libraries|dependencies)/i,
+      constraint: "No external dependencies",
+    },
     { pattern: /avoid (?:using )?mocks?/i, constraint: "Avoid mocks in tests" },
     { pattern: /no (?:breaking )?changes/i, constraint: "No breaking changes" },
     { pattern: /backward.?compatible/i, constraint: "Maintain backward compatibility" },
@@ -448,7 +455,12 @@ ${task.files ? `\nFiles to analyze: ${task.files.join(", ")}` : ""}`;
  * Detect common failure patterns in a session
  */
 export interface FailurePattern {
-  type: "kitchen-sink" | "over-correction" | "trust-gap" | "infinite-exploration" | "bloated-context";
+  type:
+    | "kitchen-sink"
+    | "over-correction"
+    | "trust-gap"
+    | "infinite-exploration"
+    | "bloated-context";
   description: string;
   suggestion: string;
 }
@@ -484,9 +496,15 @@ export function detectFailurePatterns(
     const recentFeedback = feedbackHistory.slice(-3);
     const patterns_seen = new Set<string>();
     for (const feedback of recentFeedback) {
-      if (/test.*fail/i.test(feedback)) patterns_seen.add("test-failure");
-      if (/type.*error/i.test(feedback)) patterns_seen.add("type-error");
-      if (/not.*integrat/i.test(feedback)) patterns_seen.add("integration");
+      if (/test.*fail/i.test(feedback)) {
+        patterns_seen.add("test-failure");
+      }
+      if (/type.*error/i.test(feedback)) {
+        patterns_seen.add("type-error");
+      }
+      if (/not.*integrat/i.test(feedback)) {
+        patterns_seen.add("integration");
+      }
     }
     if (patterns_seen.size < recentFeedback.length) {
       patterns.push({
@@ -518,9 +536,15 @@ export function suggestWorkflowPhase(
   }
 
   // Full workflow
-  if (!options.hasExplored) return "explore";
-  if (!options.hasPlan) return "plan";
-  if (!options.hasImplemented) return "implement";
+  if (!options.hasExplored) {
+    return "explore";
+  }
+  if (!options.hasPlan) {
+    return "plan";
+  }
+  if (!options.hasImplemented) {
+    return "implement";
+  }
   return "commit";
 }
 
@@ -643,8 +667,8 @@ export function buildInterviewPrompt(task: string): string {
     "",
   ];
 
-  const highPriority = questions.filter(q => q.priority === "high");
-  const mediumPriority = questions.filter(q => q.priority === "medium");
+  const highPriority = questions.filter((q) => q.priority === "high");
+  const mediumPriority = questions.filter((q) => q.priority === "medium");
 
   if (highPriority.length > 0) {
     lines.push("**Critical questions:**");
@@ -684,18 +708,32 @@ export function buildCommitMessage(
 ): string {
   // Detect commit type from task
   let type = "feat";
-  if (/fix|bug|issue|error/i.test(task)) type = "fix";
-  if (/refactor|clean|reorganize/i.test(task)) type = "refactor";
-  if (/test|spec/i.test(task)) type = "test";
-  if (/doc|readme|comment/i.test(task)) type = "docs";
-  if (/style|format|lint/i.test(task)) type = "style";
-  if (/perf|optim|fast/i.test(task)) type = "perf";
+  if (/fix|bug|issue|error/i.test(task)) {
+    type = "fix";
+  }
+  if (/refactor|clean|reorganize/i.test(task)) {
+    type = "refactor";
+  }
+  if (/test|spec/i.test(task)) {
+    type = "test";
+  }
+  if (/doc|readme|comment/i.test(task)) {
+    type = "docs";
+  }
+  if (/style|format|lint/i.test(task)) {
+    type = "style";
+  }
+  if (/perf|optim|fast/i.test(task)) {
+    type = "perf";
+  }
 
   // Extract scope from files
   const scopes = new Set<string>();
   for (const file of changedFiles) {
     const match = file.match(/(?:src|lib|app)\/([^/]+)/);
-    if (match) scopes.add(match[1]);
+    if (match) {
+      scopes.add(match[1]);
+    }
   }
   const scope = scopes.size === 1 ? `(${[...scopes][0]})` : "";
 
@@ -704,7 +742,7 @@ export function buildCommitMessage(
     case "conventional":
       return `${type}${scope}: ${task.slice(0, 50)}`;
     case "descriptive":
-      return `${task}\n\nChanged files:\n${changedFiles.map(f => `- ${f}`).join("\n")}`;
+      return `${task}\n\nChanged files:\n${changedFiles.map((f) => `- ${f}`).join("\n")}`;
     case "brief":
       return task.slice(0, 72);
     default:
@@ -735,7 +773,7 @@ export function assessContextHealth(
 
   let status: ContextHealth["status"] = "healthy";
   let shouldCompact = false;
-  let shouldClear = false;
+  let _shouldClear = false;
 
   if (usagePercent > 80) {
     status = "critical";
@@ -773,10 +811,7 @@ export function assessContextHealth(
  * Subagent investigation prompts
  * Best Practice: "Use subagents for investigation"
  */
-export function buildExplorationSubagentPrompt(
-  task: string,
-  codebaseHints?: string[],
-): string {
+export function buildExplorationSubagentPrompt(task: string, codebaseHints?: string[]): string {
   const lines = [
     "## CODEBASE EXPLORATION",
     "",
@@ -884,10 +919,7 @@ export interface ScreenshotComparison {
   differences: string[];
 }
 
-export function buildScreenshotVerificationPrompt(
-  url: string,
-  designMockupPath?: string,
-): string {
+export function buildScreenshotVerificationPrompt(url: string, designMockupPath?: string): string {
   const lines = [
     "## VISUAL VERIFICATION",
     "",
@@ -1001,7 +1033,9 @@ export function extractRichContent(task: string): RichContent[] {
   }
 
   // Extract image paths
-  const imagePaths = task.matchAll(/(?:screenshot|image|mockup|design)[:\s]+([a-zA-Z0-9_\-./]+\.(?:png|jpg|jpeg|gif|svg))/gi);
+  const imagePaths = task.matchAll(
+    /(?:screenshot|image|mockup|design)[:\s]+([a-zA-Z0-9_\-./]+\.(?:png|jpg|jpeg|gif|svg))/gi,
+  );
   for (const match of imagePaths) {
     content.push({
       type: "image",
@@ -1093,12 +1127,7 @@ export const DEFAULT_AUTONOMOUS_CONFIG: AutonomousConfig = {
     "Write(~/.ssh/*)",
   ],
   maxFileEdits: 10,
-  requireConfirmation: [
-    "git commit",
-    "git push",
-    "npm publish",
-    "destructive operations",
-  ],
+  requireConfirmation: ["git commit", "git push", "npm publish", "destructive operations"],
   sandboxed: true,
 };
 
@@ -1127,5 +1156,8 @@ export function isOperationAllowed(
     }
   }
 
-  return { allowed: !config.sandboxed, reason: config.sandboxed ? "Operation not in allowlist" : undefined };
+  return {
+    allowed: !config.sandboxed,
+    reason: config.sandboxed ? "Operation not in allowlist" : undefined,
+  };
 }

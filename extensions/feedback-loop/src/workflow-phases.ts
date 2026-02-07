@@ -5,11 +5,9 @@
  * Based on Claude Code best practices for effective agentic coding.
  */
 
-import crypto from "node:crypto";
-
 import type { FeedbackLoopConfig } from "openclaw/plugin-sdk";
+import crypto from "node:crypto";
 import { callGateway, AGENT_LANE_SUBAGENT, readLatestAssistantReply } from "openclaw/plugin-sdk";
-
 import type { EnhancedTask } from "./task-enhancer.js";
 
 // ============================================
@@ -113,7 +111,7 @@ export async function runExplorePhase(ctx: WorkflowContext): Promise<ExploreResu
       timeoutMs: 10_000,
     });
 
-    const spawnResponse = await callGateway({
+    const spawnResponse = (await callGateway({
       method: "agent",
       params: {
         message: prompt,
@@ -126,15 +124,15 @@ export async function runExplorePhase(ctx: WorkflowContext): Promise<ExploreResu
         label: "workflow-explore",
       },
       timeoutMs: 10_000,
-    }) as { runId?: string };
+    })) as { runId?: string };
 
     const runId = spawnResponse?.runId || crypto.randomUUID();
 
-    const waitResponse = await callGateway({
+    const waitResponse = (await callGateway({
       method: "agent.wait",
       params: { runId, timeoutMs: 180_000 }, // 3 minutes for exploration
       timeoutMs: 185_000,
-    }) as { status?: string; error?: string };
+    })) as { status?: string; error?: string };
 
     if (waitResponse?.status !== "ok") {
       throw new Error(`Explore failed: ${waitResponse?.error ?? "timeout"}`);
@@ -185,7 +183,7 @@ ${ctx.enhancedTask?.structured ?? ctx.task}
 
   if (ctx.enhancedTask?.targetFiles.length) {
     prompt += `## SUGGESTED FILES TO CHECK
-${ctx.enhancedTask.targetFiles.map(f => `- ${f}`).join("\n")}
+${ctx.enhancedTask.targetFiles.map((f) => `- ${f}`).join("\n")}
 
 `;
   }
@@ -209,14 +207,18 @@ function parseExploreResponse(response: string | undefined): ExploreResult["arti
     existingPatterns: "",
   };
 
-  if (!response) return defaults;
+  if (!response) {
+    return defaults;
+  }
 
   try {
     const jsonMatch = response.match(/```json\s*([\s\S]*?)\s*```/) || response.match(/\{[\s\S]*\}/);
     if (jsonMatch) {
       const json = JSON.parse(jsonMatch[1] || jsonMatch[0]);
       return {
-        relevantFiles: Array.isArray(json.relevantFiles) ? json.relevantFiles.join("\n") : json.relevantFiles || "",
+        relevantFiles: Array.isArray(json.relevantFiles)
+          ? json.relevantFiles.join("\n")
+          : json.relevantFiles || "",
         codebaseContext: json.codebaseContext || json.context || "",
         existingPatterns: json.existingPatterns || json.patterns || "",
       };
@@ -276,7 +278,7 @@ export async function runPlanPhase(
       timeoutMs: 10_000,
     });
 
-    const spawnResponse = await callGateway({
+    const spawnResponse = (await callGateway({
       method: "agent",
       params: {
         message: prompt,
@@ -289,15 +291,15 @@ export async function runPlanPhase(
         label: "workflow-plan",
       },
       timeoutMs: 10_000,
-    }) as { runId?: string };
+    })) as { runId?: string };
 
     const runId = spawnResponse?.runId || crypto.randomUUID();
 
-    const waitResponse = await callGateway({
+    const waitResponse = (await callGateway({
       method: "agent.wait",
       params: { runId, timeoutMs: 180_000 },
       timeoutMs: 185_000,
-    }) as { status?: string; error?: string };
+    })) as { status?: string; error?: string };
 
     if (waitResponse?.status !== "ok") {
       throw new Error(`Plan failed: ${waitResponse?.error ?? "timeout"}`);
@@ -351,10 +353,10 @@ ${exploreResult.artifacts.existingPatterns || "No patterns identified"}
 
   if (ctx.enhancedTask) {
     prompt += `## VERIFICATION CRITERIA
-${ctx.enhancedTask.verification.successCriteria.map(c => `- ${c}`).join("\n")}
+${ctx.enhancedTask.verification.successCriteria.map((c) => `- ${c}`).join("\n")}
 
 ## EDGE CASES TO HANDLE
-${ctx.enhancedTask.verification.edgeCases.map(e => `- ${e}`).join("\n")}
+${ctx.enhancedTask.verification.edgeCases.map((e) => `- ${e}`).join("\n")}
 
 `;
   }
@@ -380,7 +382,9 @@ function parsePlanResponse(response: string | undefined): PlanResult["artifacts"
     risks: "",
   };
 
-  if (!response) return defaults;
+  if (!response) {
+    return defaults;
+  }
 
   try {
     const jsonMatch = response.match(/```json\s*([\s\S]*?)\s*```/) || response.match(/\{[\s\S]*\}/);
@@ -388,16 +392,16 @@ function parsePlanResponse(response: string | undefined): PlanResult["artifacts"
       const json = JSON.parse(jsonMatch[1] || jsonMatch[0]);
 
       const steps = json.steps || [];
-      const planText = steps.map((s: { step: number; description: string; files?: string[] }) =>
-        `${s.step}. ${s.description}${s.files ? ` (${s.files.join(", ")})` : ""}`
-      ).join("\n");
+      const planText = steps
+        .map(
+          (s: { step: number; description: string; files?: string[] }) =>
+            `${s.step}. ${s.description}${s.files ? ` (${s.files.join(", ")})` : ""}`,
+        )
+        .join("\n");
 
       return {
         implementationPlan: json.summary ? `${json.summary}\n\n${planText}` : planText,
-        filesToModify: [
-          ...(json.filesToCreate || []),
-          ...(json.filesToModify || []),
-        ].join("\n"),
+        filesToModify: [...(json.filesToCreate || []), ...(json.filesToModify || [])].join("\n"),
         testStrategy: json.testStrategy || "",
         risks: Array.isArray(json.risks) ? json.risks.join("\n") : json.risks || "",
       };
@@ -416,10 +420,7 @@ function parsePlanResponse(response: string | undefined): PlanResult["artifacts"
 // Implementation is handled by the existing feedback loop (coder → reviewer)
 // This function just builds the implementation prompt with plan context
 
-export function buildImplementPrompt(
-  ctx: WorkflowContext,
-  planResult: PlanResult,
-): string {
+export function buildImplementPrompt(ctx: WorkflowContext, planResult: PlanResult): string {
   let prompt = `## IMPLEMENTATION TASK
 
 ${ctx.enhancedTask?.structured ?? ctx.task}
@@ -445,11 +446,11 @@ ${planResult.artifacts.risks || "None identified"}
   if (ctx.enhancedTask) {
     prompt += `## VERIFICATION COMMANDS (run these after implementation)
 
-${ctx.enhancedTask.verification.commands.map(c => `- \`${c.command}\` - ${c.description}`).join("\n")}
+${ctx.enhancedTask.verification.commands.map((c) => `- \`${c.command}\` - ${c.description}`).join("\n")}
 
 ## SUCCESS CRITERIA (all must pass)
 
-${ctx.enhancedTask.verification.successCriteria.map(c => `- [ ] ${c}`).join("\n")}
+${ctx.enhancedTask.verification.successCriteria.map((c) => `- [ ] ${c}`).join("\n")}
 
 `;
   }
@@ -524,7 +525,7 @@ export async function runCommitPhase(
       timeoutMs: 10_000,
     });
 
-    const spawnResponse = await callGateway({
+    const spawnResponse = (await callGateway({
       method: "agent",
       params: {
         message: prompt,
@@ -537,15 +538,15 @@ export async function runCommitPhase(
         label: "workflow-commit",
       },
       timeoutMs: 10_000,
-    }) as { runId?: string };
+    })) as { runId?: string };
 
     const runId = spawnResponse?.runId || crypto.randomUUID();
 
-    const waitResponse = await callGateway({
+    const waitResponse = (await callGateway({
       method: "agent.wait",
       params: { runId, timeoutMs: 120_000 },
       timeoutMs: 125_000,
-    }) as { status?: string; error?: string };
+    })) as { status?: string; error?: string };
 
     if (waitResponse?.status !== "ok") {
       throw new Error(`Commit failed: ${waitResponse?.error ?? "timeout"}`);
@@ -625,7 +626,9 @@ function parseCommitResponse(response: string | undefined): CommitResult["artifa
     commitMessage: "",
   };
 
-  if (!response) return artifacts;
+  if (!response) {
+    return artifacts;
+  }
 
   // Try to extract commit SHA
   const shaMatch = response.match(/\b([a-f0-9]{7,40})\b/);
@@ -640,7 +643,9 @@ function parseCommitResponse(response: string | undefined): CommitResult["artifa
   }
 
   // Extract commit message
-  const msgMatch = response.match(/(?:commit message|committed|git commit -m)[:\s]*["']?([^"'\n]+)/i);
+  const msgMatch = response.match(
+    /(?:commit message|committed|git commit -m)[:\s]*["']?([^"'\n]+)/i,
+  );
   if (msgMatch) {
     artifacts.commitMessage = msgMatch[1].trim();
   }
@@ -731,7 +736,6 @@ export async function runFullWorkflow(
     result.summary = commitResult.success
       ? `Completed: ${commitResult.artifacts.commitMessage || "Changes committed"}`
       : "Failed during commit phase";
-
   } catch (err) {
     const error = err instanceof Error ? err.message : String(err);
     result.summary = `Workflow error: ${error}`;

@@ -8,9 +8,9 @@
  * - Size changes
  */
 
+import { createHash } from "node:crypto";
 import * as fs from "node:fs";
 import * as path from "node:path";
-import { createHash } from "node:crypto";
 
 export type VisualDiffResult = {
   url: string;
@@ -111,7 +111,9 @@ async function compareImages(
 function parsePngDimensions(buffer: Buffer): { width: number; height: number } | null {
   // PNG signature: 89 50 4E 47 0D 0A 1A 0A
   // IHDR chunk starts at byte 8, dimensions at bytes 16-23
-  if (buffer.length < 24) return null;
+  if (buffer.length < 24) {
+    return null;
+  }
 
   // Check PNG signature
   if (buffer[0] !== 0x89 || buffer[1] !== 0x50 || buffer[2] !== 0x4e || buffer[3] !== 0x47) {

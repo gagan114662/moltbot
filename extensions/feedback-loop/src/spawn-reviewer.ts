@@ -1,8 +1,17 @@
+import type {
+  FeedbackLoopConfig,
+  FeedbackLoopGatesConfig,
+  FeedbackLoopReviewConfig,
+  OpenClawConfig,
+} from "openclaw/plugin-sdk";
 import crypto from "node:crypto";
-
-import type { FeedbackLoopConfig, FeedbackLoopGatesConfig, FeedbackLoopReviewConfig, OpenClawConfig } from "openclaw/plugin-sdk";
-import { callGateway, AGENT_LANE_SUBAGENT, readLatestAssistantReply, runWithModelFallback, parseModelRef } from "openclaw/plugin-sdk";
-
+import {
+  callGateway,
+  AGENT_LANE_SUBAGENT,
+  readLatestAssistantReply,
+  runWithModelFallback,
+  parseModelRef,
+} from "openclaw/plugin-sdk";
 import type { ReviewResult, CheckResult } from "./orchestrator.js";
 
 export type ReviewerContext = {
@@ -376,7 +385,7 @@ Also require rubric average >= ${minimumAverageRubricScore.toFixed(1)} before se
   const urlsToTest = extractUrlsToTest(task, coderSummary, workspaceDir);
 
   prompt += `## URLS TO TEST (MANDATORY)
-${urlsToTest.length > 0 ? urlsToTest.map(u => `- ${u.url}: ${u.expectation}`).join("\n") : "- http://localhost:3000 (main app)"}
+${urlsToTest.length > 0 ? urlsToTest.map((u) => `- ${u.url}: ${u.expectation}`).join("\n") : "- http://localhost:3000 (main app)"}
 
 **CRITICAL**: You MUST use the browser tool to navigate to these URLs and verify:
 1. Page loads (not "Coming Soon" or error page)
@@ -440,7 +449,7 @@ Respond with structured JSON as specified in your system prompt.`;
 function extractUrlsToTest(
   task: string,
   coderSummary: string,
-  workspaceDir: string,
+  _workspaceDir: string,
 ): Array<{ url: string; expectation: string }> {
   const urls: Array<{ url: string; expectation: string }> = [];
   const combined = `${task}\n${coderSummary}`;
@@ -448,7 +457,7 @@ function extractUrlsToTest(
   // Extract explicit URLs
   const urlMatches = combined.match(/https?:\/\/[^\s<>"']+/gi) || [];
   for (const url of urlMatches) {
-    if (!urls.find(u => u.url === url)) {
+    if (!urls.find((u) => u.url === url)) {
       urls.push({ url, expectation: "Page loads without errors" });
     }
   }
@@ -457,32 +466,33 @@ function extractUrlsToTest(
   const pathMatches = combined.match(/localhost:\d+\/[^\s<>"')]+/gi) || [];
   for (const path of pathMatches) {
     const url = `http://${path}`;
-    if (!urls.find(u => u.url === url)) {
+    if (!urls.find((u) => u.url === url)) {
       urls.push({ url, expectation: "Page loads without errors" });
     }
   }
 
   // Extract route paths mentioned (e.g., "/test-scratchpad", "/api/health")
-  const routeMatches = combined.match(/(?:at |page |route |endpoint |url )[`"']?\/([a-zA-Z0-9_\-/]+)/gi) || [];
+  const routeMatches =
+    combined.match(/(?:at |page |route |endpoint |url )[`"']?\/([a-zA-Z0-9_\-/]+)/gi) || [];
   for (const match of routeMatches) {
     const routeMatch = match.match(/\/([a-zA-Z0-9_\-/]+)/);
     if (routeMatch) {
       const route = `/${routeMatch[1]}`;
       const url = `http://localhost:3000${route}`;
-      if (!urls.find(u => u.url === url)) {
+      if (!urls.find((u) => u.url === url)) {
         urls.push({ url, expectation: `Route ${route} renders correctly` });
       }
     }
   }
 
   // Detect test pages from file paths
-  const testPageMatches = combined.match(/pages\/([a-zA-Z0-9_\-]+)\.(tsx|jsx|ts|js)/gi) || [];
+  const testPageMatches = combined.match(/pages\/([a-zA-Z0-9_-]+)\.(tsx|jsx|ts|js)/gi) || [];
   for (const match of testPageMatches) {
-    const pageMatch = match.match(/pages\/([a-zA-Z0-9_\-]+)/);
+    const pageMatch = match.match(/pages\/([a-zA-Z0-9_-]+)/);
     if (pageMatch) {
       const pageName = pageMatch[1];
       const url = `http://localhost:3000/${pageName}`;
-      if (!urls.find(u => u.url === url)) {
+      if (!urls.find((u) => u.url === url)) {
         urls.push({ url, expectation: `${pageName} page renders correctly` });
       }
     }
@@ -497,10 +507,10 @@ function extractUrlsToTest(
     if (route.length > 3 && !["react", "index", "layout", "error"].includes(route)) {
       const url = `http://localhost:3000/test-${route}`;
       const appUrl = `http://localhost:3000/app`;
-      if (!urls.find(u => u.url === url)) {
+      if (!urls.find((u) => u.url === url)) {
         urls.push({ url, expectation: `${componentName} test page renders the component` });
       }
-      if (!urls.find(u => u.url === appUrl)) {
+      if (!urls.find((u) => u.url === appUrl)) {
         urls.push({ url: appUrl, expectation: `Main app integrates ${componentName}` });
       }
     }
@@ -508,7 +518,7 @@ function extractUrlsToTest(
 
   // Always add base URLs if we're in a frontend task
   if (/frontend|react|component|page|ui/i.test(combined)) {
-    if (!urls.find(u => u.url.includes("localhost:3000"))) {
+    if (!urls.find((u) => u.url.includes("localhost:3000"))) {
       urls.push({ url: "http://localhost:3000", expectation: "Frontend app loads" });
     }
   }
@@ -615,7 +625,9 @@ function normalizeReviewerPayload(
 
   for (const issue of payload.issues) {
     checks.push({
-      command: issue.category ? `${issue.category}: ${issue.description ?? "issue"}` : "review-issue",
+      command: issue.category
+        ? `${issue.category}: ${issue.description ?? "issue"}`
+        : "review-issue",
       name: issue.category ?? "issue",
       passed: false,
       evidence: issue.fix,

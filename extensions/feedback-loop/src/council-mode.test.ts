@@ -1,4 +1,5 @@
-import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
+import type { CouncilConfig } from "openclaw/plugin-sdk";
+import { describe, it, expect } from "vitest";
 import {
   estimateQueryComplexity,
   shouldAutoTriggerCouncil,
@@ -7,7 +8,6 @@ import {
   DEFAULT_CHAIR_MODEL,
   type CouncilResult,
 } from "./council-mode.js";
-import type { CouncilConfig } from "openclaw/plugin-sdk";
 
 describe("council-mode", () => {
   describe("estimateQueryComplexity", () => {
@@ -74,7 +74,10 @@ describe("council-mode", () => {
         autoTrigger: true,
         complexityThreshold: 0.3,
       };
-      const result = shouldAutoTriggerCouncil("What are the trade-offs between SQL vs NoSQL?", config);
+      const result = shouldAutoTriggerCouncil(
+        "What are the trade-offs between SQL vs NoSQL?",
+        config,
+      );
       expect(result).toBe(true);
     });
 
@@ -102,7 +105,12 @@ describe("council-mode", () => {
         synthesis: "Start with a modular monolith.",
         confidence: "high",
         memberResponses: [
-          { memberId: "claude", model: "anthropic/claude-opus-4-5", response: "...", durationMs: 5000 },
+          {
+            memberId: "claude",
+            model: "anthropic/claude-opus-4-5",
+            response: "...",
+            durationMs: 5000,
+          },
           { memberId: "gpt", model: "openai/gpt-5.2", response: "...", durationMs: 4000 },
         ],
         agreements: ["Speed matters", "Don't over-engineer"],
@@ -133,7 +141,12 @@ describe("council-mode", () => {
         synthesis: "Simple answer.",
         confidence: "medium",
         memberResponses: [
-          { memberId: "claude", model: "anthropic/claude-opus-4-5", response: "...", durationMs: 5000 },
+          {
+            memberId: "claude",
+            model: "anthropic/claude-opus-4-5",
+            response: "...",
+            durationMs: 5000,
+          },
         ],
         agreements: [],
         disagreements: [],

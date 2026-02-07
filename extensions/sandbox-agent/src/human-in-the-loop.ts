@@ -5,14 +5,8 @@
  * (WhatsApp, Telegram, Discord, etc.) for human approval.
  */
 
-import type {
-  UniversalEvent,
-  PermissionEventData,
-  QuestionEventData,
-} from "sandbox-agent";
-
+import type { UniversalEvent, PermissionEventData, QuestionEventData } from "sandbox-agent";
 import type { SandboxAgentManager } from "./manager.js";
-import type { SandboxAgentConfig } from "./index.js";
 
 export interface HumanInTheLoopConfig {
   enabled?: boolean;
@@ -91,7 +85,9 @@ export function setupHumanInTheLoop(
   if (ctx.on) {
     ctx.on("message", (message: HITLMessage) => {
       const text = message.text?.toLowerCase().trim();
-      if (!text) return;
+      if (!text) {
+        return;
+      }
 
       // Check for approval responses: "approve", "deny", "yes", "no"
       const isApproval = text === "approve" || text === "yes" || text === "y";
@@ -106,7 +102,7 @@ export function setupHumanInTheLoop(
               reason: isDenial ? "User denied" : undefined,
             });
             pendingApprovals.delete(id);
-            message.reply(isApproval ? "Approved." : "Denied.");
+            void message.reply(isApproval ? "Approved." : "Denied.");
             return;
           }
         }
@@ -120,7 +116,7 @@ export function setupHumanInTheLoop(
             reason: isDenial ? "User denied" : undefined,
           });
           pendingApprovals.delete(id);
-          message.reply(isApproval ? "Approved." : "Denied.");
+          void message.reply(isApproval ? "Approved." : "Denied.");
           return;
         }
       }

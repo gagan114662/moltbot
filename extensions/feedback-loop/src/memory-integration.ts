@@ -1,8 +1,7 @@
+import type { FeedbackLoopConfig } from "openclaw/plugin-sdk";
 import * as fs from "node:fs/promises";
 import * as path from "node:path";
-
-import type { FeedbackLoopConfig } from "openclaw/plugin-sdk";
-import type { ReviewResult, CheckResult } from "./orchestrator.js";
+import type { ReviewResult } from "./orchestrator.js";
 
 export type MemoryContext = {
   config: FeedbackLoopConfig;
@@ -173,7 +172,8 @@ export async function saveFeedbackToMemory(
 
     // Append new entry at the top (after header)
     const headerEnd = existingContent.indexOf("\n\n");
-    const header = headerEnd > 0 ? existingContent.slice(0, headerEnd + 2) : "# Feedback History\n\n";
+    const header =
+      headerEnd > 0 ? existingContent.slice(0, headerEnd + 2) : "# Feedback History\n\n";
     const rest = headerEnd > 0 ? existingContent.slice(headerEnd + 2) : "";
 
     // Update recurring patterns section
@@ -245,11 +245,21 @@ function parseIssuesFromFeedback(feedback: string): FeedbackIssue[] {
  */
 function extractCategory(command: string): string {
   const lower = command.toLowerCase();
-  if (lower.includes("pytest") || lower.includes("test")) return "testing";
-  if (lower.includes("lint") || lower.includes("ruff") || lower.includes("eslint")) return "linting";
-  if (lower.includes("type") || lower.includes("mypy") || lower.includes("tsc")) return "types";
-  if (lower.includes("browser") || lower.includes("ui")) return "ui";
-  if (lower.includes("coverage")) return "coverage";
+  if (lower.includes("pytest") || lower.includes("test")) {
+    return "testing";
+  }
+  if (lower.includes("lint") || lower.includes("ruff") || lower.includes("eslint")) {
+    return "linting";
+  }
+  if (lower.includes("type") || lower.includes("mypy") || lower.includes("tsc")) {
+    return "types";
+  }
+  if (lower.includes("browser") || lower.includes("ui")) {
+    return "ui";
+  }
+  if (lower.includes("coverage")) {
+    return "coverage";
+  }
   return "general";
 }
 
@@ -257,7 +267,9 @@ function extractCategory(command: string): string {
  * Extract file path from error message
  */
 function extractFile(error: string | undefined): string | undefined {
-  if (!error) return undefined;
+  if (!error) {
+    return undefined;
+  }
   const match = error.match(/([a-zA-Z0-9_\-./]+\.[a-zA-Z]+)/);
   return match ? match[1] : undefined;
 }
@@ -266,7 +278,9 @@ function extractFile(error: string | undefined): string | undefined {
  * Extract line number from error message
  */
 function extractLine(error: string | undefined): number | undefined {
-  if (!error) return undefined;
+  if (!error) {
+    return undefined;
+  }
   const match = error.match(/:(\d+)/);
   return match ? parseInt(match[1], 10) : undefined;
 }
@@ -318,7 +332,9 @@ function detectRecurringPatterns(previous: FeedbackIssue[], current: FeedbackIss
  */
 function extractRecentIssues(content: string): string | undefined {
   // Find the most recent session section
-  const sessionMatch = content.match(/## Session \d{4}-\d{2}-\d{2}[\s\S]*?(?=## Session|\n## Recurring|$)/);
+  const sessionMatch = content.match(
+    /## Session \d{4}-\d{2}-\d{2}[\s\S]*?(?=## Session|\n## Recurring|$)/,
+  );
   if (sessionMatch) {
     // Extract just the issues
     const issuesMatch = sessionMatch[0].match(/### Issues Found:[\s\S]*?(?=###|$)/);
@@ -415,7 +431,7 @@ function updateRecurringSection(content: string, newRecurring: string[]): string
 
   // Format recurring section
   let recurringSection = "\n## Recurring Patterns\n\n";
-  const sorted = [...patterns.entries()].sort((a, b) => b[1] - a[1]);
+  const sorted = [...patterns.entries()].toSorted((a, b) => b[1] - a[1]);
   for (const [pattern, count] of sorted) {
     recurringSection += `- ${pattern} (${count} occurrences)\n`;
   }
