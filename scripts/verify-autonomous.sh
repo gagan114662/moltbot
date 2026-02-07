@@ -53,7 +53,7 @@ discover_changed_tests() {
 if [[ "${MODE}" == "fast" ]]; then
   if ! read_commands_from_env "${VERIFY_COMMANDS_FAST:-}"; then
     COMMANDS=(
-      "pnpm exec tsc -p tsconfig.json --noEmit"
+      "pnpm tsgo"
       "pnpm check"
     )
     # Add tests for changed files
@@ -73,7 +73,7 @@ if [[ "${MODE}" == "fast" ]]; then
 elif [[ "${MODE}" == "full" ]]; then
   if ! read_commands_from_env "${VERIFY_COMMANDS_FULL:-}"; then
     COMMANDS=(
-      "pnpm exec tsc -p tsconfig.json --noEmit"
+      "pnpm tsgo"
       "pnpm check"
       "pnpm build"
     )
