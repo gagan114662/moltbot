@@ -75,3 +75,19 @@ USER.md
 memory/
 .agent/*.json
 !.agent/workflows/
+
+# Workspace / agent artifacts
+.agents/
+.claude/
+.clawhub/
+.feedback-loop/
+.openclaw/
+GOALS.md
+PROGRESS.md
+DEV-GOALS-BACKUP.md
+verified-bundle.json
+nohup.out
+artifacts/
+landing/
+skills/parallel-*/
+skills/clawdstrike
