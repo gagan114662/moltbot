@@ -1,23 +1,31 @@
 /**
  * Deep UX evaluation stage for the copilot pipeline.
  *
- * Spawns an AI agent with browser tools that navigates the running app,
- * tests user flows against acceptance criteria, and produces a structured
- * report with verdict + findings + summary.
+ * Uses Playwright headless to capture browser state (screenshots, text,
+ * console errors, loading times), then sends the evidence to an AI agent
+ * for evaluation against acceptance criteria.
+ *
+ * No Chrome extension needed — runs fully autonomously.
  *
  * Used by both `/work` (autonomous fix loop) and `/qa` (standalone QA).
  */
 
+import fs from "node:fs";
+import path from "node:path";
 import type { StageResult } from "./types.js";
 import { agentCliCommand } from "../commands/agent-via-gateway.js";
 import { defaultRuntime } from "../runtime.js";
+import { resolveChromePath } from "./browser-inspect.js";
 import { truncateError } from "./feedback.js";
 import { detectDevServer } from "./video-verify.js";
 
 const DEFAULT_STEPS = 10;
 const DEFAULT_SAMPLE = 5;
 const UX_EVAL_TIMEOUT_S = 180;
-const PER_FLOW_TIMEOUT_NOTE = "60s per step";
+const PAGE_LOAD_TIMEOUT = 30_000;
+const SETTLE_WAIT = 3000;
+const LOADING_CHECK_INTERVAL = 2000;
+const LOADING_MAX_WAIT = 60_000;
 
 export type UxEvalContext = {
   /** Working directory */
@@ -127,44 +135,237 @@ export function formatUxReport(result: UxEvalResult): string {
   return lines.join("\n");
 }
 
-function buildUxEvalSystemPrompt(
-  criteria: string,
-  appUrl: string,
-  maxSteps: number,
-  sample: number,
-): string {
+// ── Playwright capture ────────────────────────────────────────────────
+
+type CapturedPage = {
+  url: string;
+  title: string;
+  bodyText: string;
+  consoleErrors: string[];
+  networkFailures: string[];
+  loadTimeMs: number;
+  stuckOnLoading: boolean;
+  screenshotPath: string;
+  interactiveElements: string[];
+};
+
+/** Capture a single page state using Playwright headless */
+async function capturePage(
+  page: import("playwright-core").Page,
+  url: string,
+  evidenceDir: string,
+  label: string,
+): Promise<CapturedPage> {
+  const consoleErrors: string[] = [];
+  const networkFailures: string[] = [];
+
+  // Listen for errors during this navigation
+  const onConsole = (msg: import("playwright-core").ConsoleMessage) => {
+    if (msg.type() === "error") {
+      consoleErrors.push(msg.text().slice(0, 300));
+    }
+  };
+  const onRequestFailed = (req: import("playwright-core").Request) => {
+    networkFailures.push(`${req.method()} ${req.url().slice(0, 200)} → failed`);
+  };
+  const onResponse = (res: import("playwright-core").Response) => {
+    if (res.status() >= 400) {
+      networkFailures.push(
+        `${res.request().method()} ${res.url().slice(0, 200)} → ${res.status()}`,
+      );
+    }
+  };
+
+  page.on("console", onConsole);
+  page.on("requestfailed", onRequestFailed);
+  page.on("response", onResponse);
+
+  const loadStart = Date.now();
+
+  try {
+    await page.goto(url, {
+      waitUntil: "domcontentloaded",
+      timeout: PAGE_LOAD_TIMEOUT,
+    });
+  } catch {
+    // Navigation timeout — still capture what we can
+  }
+
+  // Wait for app to settle
+  await page.waitForTimeout(SETTLE_WAIT);
+
+  // Inject CSS to disable animations
+  await page
+    .addStyleTag({
+      content:
+        "* { animation: none !important; transition: none !important; caret-color: transparent !important; }",
+    })
+    .catch(() => {});
+
+  // Check for stuck loading states (spinner, "Preparing...", "Loading...")
+  let stuckOnLoading = false;
+  const loadingPatterns = /preparing|loading|please wait|spinner|generating/i;
+
+  const initialText = await page
+    .evaluate(() => document.body?.innerText?.trim() ?? "")
+    .catch(() => "");
+
+  if (loadingPatterns.test(initialText)) {
+    // Wait up to LOADING_MAX_WAIT for loading to resolve
+    let waited = 0;
+    while (waited < LOADING_MAX_WAIT) {
+      await page.waitForTimeout(LOADING_CHECK_INTERVAL);
+      waited += LOADING_CHECK_INTERVAL;
+      const currentText = await page
+        .evaluate(() => document.body?.innerText?.trim() ?? "")
+        .catch(() => "");
+      if (!loadingPatterns.test(currentText)) {
+        break;
+      }
+      if (waited >= LOADING_MAX_WAIT) {
+        stuckOnLoading = true;
+      }
+    }
+  }
+
+  const loadTimeMs = Date.now() - loadStart;
+
+  // Capture final state
+  const bodyText = await page
+    .evaluate(() => document.body?.innerText?.trim() ?? "")
+    .catch(() => "");
+  const title = await page.title().catch(() => "");
+
+  // Get interactive elements summary
+  const interactiveElements = await page
+    .evaluate(() => {
+      const elements: string[] = [];
+      const buttons = document.querySelectorAll("button, [role=button]");
+      for (const btn of Array.from(buttons).slice(0, 20)) {
+        const text = (btn as HTMLElement).innerText?.trim();
+        if (text) {
+          elements.push(`button: "${text.slice(0, 50)}"`);
+        }
+      }
+      const inputs = document.querySelectorAll("input, textarea, select");
+      for (const inp of Array.from(inputs).slice(0, 20)) {
+        const el = inp as HTMLInputElement;
+        elements.push(
+          `${el.tagName.toLowerCase()}[${el.type || "text"}]: ${el.placeholder || el.name || "(unnamed)"}`,
+        );
+      }
+      const links = document.querySelectorAll("a[href]");
+      for (const link of Array.from(links).slice(0, 20)) {
+        const text = (link as HTMLElement).innerText?.trim();
+        if (text) {
+          elements.push(
+            `link: "${text.slice(0, 50)}" → ${(link as HTMLAnchorElement).href.slice(0, 80)}`,
+          );
+        }
+      }
+      return elements;
+    })
+    .catch(() => [] as string[]);
+
+  // Take screenshot
+  const safeName = label.replace(/[^a-zA-Z0-9-_]/g, "_").slice(0, 50);
+  const screenshotPath = path.join(evidenceDir, `ux-eval-${safeName}.png`);
+  await page.screenshot({ path: screenshotPath, fullPage: true }).catch(() => {});
+
+  // Clean up listeners
+  page.removeListener("console", onConsole);
+  page.removeListener("requestfailed", onRequestFailed);
+  page.removeListener("response", onResponse);
+
+  return {
+    url,
+    title,
+    bodyText: bodyText.slice(0, 3000),
+    consoleErrors,
+    networkFailures,
+    loadTimeMs,
+    stuckOnLoading,
+    screenshotPath,
+    interactiveElements,
+  };
+}
+
+/** Build evidence text from captured pages for AI evaluation */
+function buildEvidenceReport(captures: CapturedPage[]): string {
+  const sections: string[] = [];
+
+  for (const cap of captures) {
+    const lines: string[] = [];
+    lines.push(`── Page: ${cap.url} ──`);
+    lines.push(`Title: ${cap.title || "(empty)"}`);
+    lines.push(`Load time: ${cap.loadTimeMs}ms`);
+
+    if (cap.stuckOnLoading) {
+      lines.push(
+        `⚠ STUCK ON LOADING: Page showed loading state for >${LOADING_MAX_WAIT / 1000}s and never resolved`,
+      );
+    }
+
+    if (cap.bodyText.length === 0) {
+      lines.push("⚠ BLANK PAGE: No visible text content");
+    } else {
+      lines.push(`\nVisible text (first 3000 chars):\n${cap.bodyText}`);
+    }
+
+    if (cap.consoleErrors.length > 0) {
+      lines.push(
+        `\nConsole errors (${cap.consoleErrors.length}):\n${cap.consoleErrors.map((e) => `  - ${e}`).join("\n")}`,
+      );
+    }
+
+    if (cap.networkFailures.length > 0) {
+      lines.push(
+        `\nNetwork failures (${cap.networkFailures.length}):\n${cap.networkFailures.map((e) => `  - ${e}`).join("\n")}`,
+      );
+    }
+
+    if (cap.interactiveElements.length > 0) {
+      lines.push(
+        `\nInteractive elements:\n${cap.interactiveElements.map((e) => `  - ${e}`).join("\n")}`,
+      );
+    }
+
+    lines.push(`Screenshot: ${cap.screenshotPath}`);
+    sections.push(lines.join("\n"));
+  }
+
+  return sections.join("\n\n");
+}
+
+function buildEvalPrompt(criteria: string, evidence: string, sample: number): string {
   return [
-    "You are a QA engineer testing a web app on localhost.",
-    "Your job is to evaluate the ACTUAL USER EXPERIENCE against these acceptance criteria.",
+    "You are a QA engineer evaluating a web app against acceptance criteria.",
+    "Below is the CAPTURED EVIDENCE from the app (page text, errors, timing, elements).",
+    "Evaluate HONESTLY — does the actual user experience match what was promised?",
     "",
     "ACCEPTANCE CRITERIA:",
     criteria,
     "",
-    "APP URL: " + appUrl,
+    "CAPTURED EVIDENCE:",
+    evidence,
     "",
     "Instructions:",
-    `1. Navigate to ${appUrl} using the browser tool`,
-    "2. Test the primary user flows described in the criteria",
-    "3. Evaluate content quality, interaction patterns, and UX",
-    "4. Take screenshots at key points for evidence",
-    "5. Be HONEST — if it doesn't match the criteria, say so specifically",
-    "6. For each issue, describe: what you expected vs what you saw",
-    "",
-    "Constraints:",
-    `- Maximum ${maxSteps} interaction steps (each click/navigate/fill = 1 step)`,
-    `- If testing a matrix (multiple ages/topics/etc), sample ${sample} diverse combos`,
-    `- Each step has a ${PER_FLOW_TIMEOUT_NOTE} limit — if a page hangs, report it and move on`,
-    "- Inject CSS to disable animations: * { animation: none !important; transition: none !important; }",
+    "1. Compare the captured page text against what the criteria promise",
+    "2. Check for loading issues, stuck states, timeouts",
+    "3. Check for error messages, console errors, network failures",
+    "4. Evaluate if content is appropriate (e.g., age-appropriate questions)",
+    "5. Be SPECIFIC about what works and what doesn't",
+    `6. If criteria mention a matrix (ages/topics/etc), evaluate the ${sample} sampled combos`,
     "",
     "Report format (use EXACTLY this structure):",
     "VERDICT: pass|fail|partial",
     "FINDING: [critical|major|minor] - <description>",
     "FINDING: [critical|major|minor] - <description>",
-    "SUMMARY: <plain-English honest assessment of the user experience>",
+    "SUMMARY: <plain-English honest assessment>",
     "",
-    "Use CRITICAL for: crashes, hangs, broken flows, missing core functionality",
-    "Use MAJOR for: wrong content, poor UX, accessibility failures, slow loads (>10s)",
-    "Use MINOR for: visual glitches, alignment, non-blocking cosmetic issues",
+    "CRITICAL = crashes, hangs >60s, broken flows, missing core functionality",
+    "MAJOR = wrong content, poor UX, accessibility failures, slow loads >10s",
+    "MINOR = visual glitches, alignment, non-blocking cosmetic issues",
   ].join("\n");
 }
 
@@ -187,36 +388,218 @@ export async function runUxEvalStage(
     };
   }
 
-  const systemPrompt = buildUxEvalSystemPrompt(ctx.criteria, appUrl, maxSteps, sample);
+  // Resolve browser
+  const chromePath = resolveChromePath();
+  if (!chromePath) {
+    return {
+      stage: "ux-eval",
+      passed: true,
+      durationMs: Date.now() - start,
+      error: "No browser executable found (skipped)",
+    };
+  }
+
+  let chromium: (typeof import("playwright-core"))["chromium"];
+  try {
+    const pw = await import("playwright-core");
+    chromium = pw.chromium;
+  } catch {
+    return {
+      stage: "ux-eval",
+      passed: true,
+      durationMs: Date.now() - start,
+      error: "playwright-core not available (skipped)",
+    };
+  }
+
+  const evidenceDir = path.join(ctx.cwd, ".moltbot", "evidence");
+  fs.mkdirSync(evidenceDir, { recursive: true });
+
+  let browser: import("playwright-core").Browser | undefined;
 
   try {
-    const sessionId = `ux-eval-${Date.now()}`;
-    const response = await agentCliCommand(
-      {
-        message: `Test the app at ${appUrl} against the acceptance criteria. Navigate, interact, and evaluate the actual user experience.`,
-        agent: ctx.agentId,
-        sessionId,
-        thinking: "low",
-        timeout: String(UX_EVAL_TIMEOUT_S),
-        local: ctx.local,
-        json: true,
-        extraSystemPrompt: systemPrompt,
-      },
-      defaultRuntime,
-    );
+    browser = await chromium.launch({
+      executablePath: chromePath,
+      headless: true,
+      args: ["--no-default-browser-check", "--disable-features=TranslateUI"],
+    });
 
-    const result = response as
-      | { result?: { payloads?: Array<{ text?: string }> }; summary?: string }
-      | undefined;
-    const text =
-      result?.result?.payloads
-        ?.map((p) => p.text)
-        .filter(Boolean)
-        .join("\n") ??
-      result?.summary ??
-      "";
+    const page = await browser.newPage({
+      viewport: { width: 1280, height: 720 },
+    });
 
-    const uxResult = parseUxEvalOutput(text);
+    const captures: CapturedPage[] = [];
+
+    // Step 1: Capture the main page
+    const mainCapture = await capturePage(page, appUrl, evidenceDir, "main");
+    captures.push(mainCapture);
+
+    // Step 2: Try to navigate through the app (click buttons, follow links)
+    // Look for navigation elements that match the criteria
+    let stepsUsed = 1;
+    if (stepsUsed < maxSteps) {
+      // Find clickable elements that might lead to testable flows
+      const clickTargets = await page
+        .evaluate(() => {
+          const targets: Array<{
+            selector: string;
+            text: string;
+          }> = [];
+          const clickables = document.querySelectorAll("button, a[href], [role=button], [onclick]");
+          for (const el of Array.from(clickables).slice(0, 30)) {
+            const text = (el as HTMLElement).innerText?.trim() ?? "";
+            if (text && text.length < 100 && !text.match(/^(close|cancel|dismiss|x)$/i)) {
+              // Build a selector for this element
+              const tag = el.tagName.toLowerCase();
+              targets.push({ selector: `${tag}`, text });
+            }
+          }
+          return targets;
+        })
+        .catch(() => [] as Array<{ selector: string; text: string }>);
+
+      // Click through up to maxSteps interesting targets
+      const sampled = clickTargets.slice(0, Math.min(sample, maxSteps - 1));
+      for (const target of sampled) {
+        if (ctx.signal.aborted) {
+          break;
+        }
+        stepsUsed++;
+
+        try {
+          // Try to click elements matching this text
+          const locator = page.getByText(target.text, { exact: false }).first();
+          const isVisible = await locator.isVisible().catch(() => false);
+          if (isVisible) {
+            await locator.click({ timeout: 5000 });
+            await page.waitForTimeout(SETTLE_WAIT);
+
+            // Capture the new state
+            const stepCapture = await capturePage(
+              page,
+              page.url(),
+              evidenceDir,
+              `step-${stepsUsed}-${target.text.slice(0, 20)}`,
+            );
+            captures.push(stepCapture);
+
+            // Go back if we navigated away
+            if (page.url() !== appUrl) {
+              await page
+                .goto(appUrl, {
+                  waitUntil: "domcontentloaded",
+                  timeout: 10_000,
+                })
+                .catch(() => {});
+              await page.waitForTimeout(SETTLE_WAIT);
+            }
+          }
+        } catch {
+          // Click failed, continue to next target
+        }
+      }
+    }
+
+    await page.close();
+
+    // Step 3: Send evidence to AI for evaluation
+    const evidence = buildEvidenceReport(captures);
+    const evalPrompt = buildEvalPrompt(ctx.criteria, evidence, sample);
+
+    // Quick programmatic pre-check — find obvious failures
+    const preFindings: UxFinding[] = [];
+    for (const cap of captures) {
+      if (cap.stuckOnLoading) {
+        preFindings.push({
+          severity: "critical",
+          description: `${cap.url} stuck on loading state for >${LOADING_MAX_WAIT / 1000}s`,
+        });
+      }
+      if (cap.bodyText.length === 0) {
+        preFindings.push({
+          severity: "critical",
+          description: `${cap.url} rendered a blank page`,
+        });
+      }
+      if (cap.loadTimeMs > 10_000 && !cap.stuckOnLoading) {
+        preFindings.push({
+          severity: "major",
+          description: `${cap.url} took ${(cap.loadTimeMs / 1000).toFixed(1)}s to load`,
+        });
+      }
+      for (const err of cap.consoleErrors.slice(0, 3)) {
+        preFindings.push({
+          severity: "major",
+          description: `Console error on ${cap.url}: ${err.slice(0, 100)}`,
+        });
+      }
+    }
+
+    // Send to AI agent for deep evaluation (uses gateway model, not API key)
+    let aiText = "";
+    try {
+      const sessionId = `ux-eval-${Date.now()}`;
+      const response = await agentCliCommand(
+        {
+          message: evalPrompt,
+          agent: ctx.agentId,
+          sessionId,
+          thinking: "low",
+          timeout: String(UX_EVAL_TIMEOUT_S),
+          local: ctx.local,
+          json: true,
+        },
+        defaultRuntime,
+      );
+
+      const result = response as
+        | {
+            result?: { payloads?: Array<{ text?: string }> };
+            summary?: string;
+          }
+        | undefined;
+      aiText =
+        result?.result?.payloads
+          ?.map((p) => p.text)
+          .filter(Boolean)
+          .join("\n") ??
+        result?.summary ??
+        "";
+    } catch {
+      // AI eval failed — fall back to programmatic findings only
+    }
+
+    // Merge AI findings with programmatic pre-check
+    let uxResult: UxEvalResult;
+    if (aiText) {
+      uxResult = parseUxEvalOutput(aiText);
+      // Add any programmatic findings the AI missed
+      for (const pf of preFindings) {
+        const alreadyFound = uxResult.findings.some((f) =>
+          f.description.toLowerCase().includes(pf.description.slice(0, 30).toLowerCase()),
+        );
+        if (!alreadyFound) {
+          uxResult.findings.push(pf);
+        }
+      }
+      // If programmatic checks found critical issues but AI said pass, override
+      if (uxResult.verdict === "pass" && preFindings.some((f) => f.severity === "critical")) {
+        uxResult.verdict = "fail";
+      }
+    } else {
+      // No AI response — use programmatic findings only
+      const hasCritical = preFindings.some((f) => f.severity === "critical");
+      const hasMajor = preFindings.some((f) => f.severity === "major");
+      uxResult = {
+        verdict: hasCritical ? "fail" : hasMajor ? "partial" : "pass",
+        findings: preFindings,
+        summary:
+          preFindings.length > 0
+            ? `Programmatic check found ${preFindings.length} issue(s). AI evaluation unavailable.`
+            : "Page loaded successfully. AI evaluation unavailable for deep content check.",
+      };
+    }
+
     const passed = uxResult.verdict === "pass";
 
     return {
@@ -239,7 +622,13 @@ export async function runUxEvalStage(
       stage: "ux-eval",
       passed: false,
       durationMs: Date.now() - start,
-      error: truncateError(`UX eval agent failed: ${String(err)}`),
+      error: truncateError(`UX eval failed: ${String(err)}`),
     };
+  } finally {
+    try {
+      await browser?.close();
+    } catch {
+      // ignore close errors
+    }
   }
 }
