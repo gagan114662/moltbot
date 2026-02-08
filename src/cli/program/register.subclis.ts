@@ -239,6 +239,14 @@ const entries: SubCliEntry[] = [
       mod.registerCompletionCli(program);
     },
   },
+  {
+    name: "copilot",
+    description: "Code verification copilot",
+    register: async (program) => {
+      const mod = await import("../copilot-cli.js");
+      mod.registerCopilotCli(program);
+    },
+  },
 ];
 
 export function getSubCliEntries(): SubCliEntry[] {

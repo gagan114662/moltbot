@@ -76,6 +76,9 @@ memory/
 .agent/*.json
 !.agent/workflows/
 
+# Copilot runtime data
+.moltbot/
+
 # Workspace / agent artifacts
 .agents/
 .claude/
