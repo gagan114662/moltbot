@@ -112,6 +112,10 @@ export function registerCopilotCli(program: Command): void {
     .option("--no-tests", "Skip test stage")
     .option("--no-video", "Skip video verification on success")
     .option("--no-browser", "Skip browser QA inspection")
+    .option("--no-coverage", "Skip coverage-diff stage")
+    .option("--no-screenshot-diff", "Skip screenshot-diff stage")
+    .option("--no-review", "Skip review-agent stage")
+    .option("--no-spec-tests", "Skip spec-test TDD stage")
     .option("--app-url <url>", "URL for video/browser verification")
     .option("--json", "Output JSONL events instead of dashboard", false)
     .action(async (task, opts) => {
@@ -125,6 +129,10 @@ export function registerCopilotCli(program: Command): void {
         noTests: !opts.tests,
         noVideo: !opts.video,
         noBrowser: !opts.browser,
+        noCoverage: !opts.coverage,
+        noScreenshotDiff: !opts.screenshotDiff,
+        noReview: !opts.review,
+        noSpecTests: !opts.specTests,
         appUrl: opts.appUrl,
         agentId: opts.agent,
         thinking: opts.thinking,

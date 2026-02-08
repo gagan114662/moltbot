@@ -14,6 +14,10 @@ import { agentCliCommand } from "../commands/agent-via-gateway.js";
 import { defaultRuntime } from "../runtime.js";
 import { runBrowserInspectStage } from "./browser-inspect.js";
 import { buildSummary, writeFeedback } from "./feedback.js";
+import { runCoverageDiffStage } from "./stages-coverage.js";
+import { runReviewStage } from "./stages-review.js";
+import { runScreenshotDiffStage } from "./stages-screenshot-diff.js";
+import { augmentTaskWithSpecs, runSpecTestStage } from "./stages-spec-tests.js";
 import { runLintStage, runTypecheckStage, runTestStage } from "./stages.js";
 import { runVideoVerification } from "./video-verify.js";
 import { createWorkerDashboard } from "./worker-dashboard.js";
@@ -161,6 +165,7 @@ export function failureFingerprint(checks: StageResult[]): string {
 async function runVerification(
   changedFiles: string[],
   config: WorkerConfig,
+  baselineRef: string,
   signal: AbortSignal,
   emit: (event: WorkerEvent) => void,
 ): Promise<{ checks: StageResult[]; allPassed: boolean; durationMs: number }> {
@@ -183,17 +188,56 @@ async function runVerification(
     emit({ type: "stage-done", result: test });
   }
 
+  // Coverage-diff (only if tests passed and not skipped)
+  const testsPassed = checks.every((c) => c.passed);
+  if (!config.noCoverage && testsPassed && !config.noTests) {
+    emit({ type: "stage-start", stage: "coverage-diff" });
+    const coverage = await runCoverageDiffStage({ ...ctx, baselineRef });
+    checks.push(coverage);
+    emit({ type: "stage-done", result: coverage });
+  }
+
   // Browser inspection (only if code checks pass and not skipped)
   const codeChecksPassed = checks.every((c) => c.passed);
+  let screenshotPath: string | undefined;
   if (!config.noBrowser && codeChecksPassed) {
     emit({ type: "stage-start", stage: "browser" });
-    const { result: browserResult } = await runBrowserInspectStage({
+    const { result: browserResult, inspect } = await runBrowserInspectStage({
       cwd: config.cwd,
       signal,
       appUrl: config.appUrl,
     });
     checks.push(browserResult);
     emit({ type: "stage-done", result: browserResult });
+    screenshotPath = inspect?.screenshotPath;
+  }
+
+  // Screenshot-diff (only if browser passed and screenshot exists)
+  if (!config.noScreenshotDiff && screenshotPath && codeChecksPassed) {
+    emit({ type: "stage-start", stage: "screenshot-diff" });
+    const screenshotDiff = await runScreenshotDiffStage({
+      cwd: config.cwd,
+      screenshotPath,
+      signal,
+    });
+    checks.push(screenshotDiff);
+    emit({ type: "stage-done", result: screenshotDiff });
+  }
+
+  // Review-agent (advisory-only, after all automated checks pass)
+  const allAutomatedPassed = checks.every((c) => c.passed);
+  if (!config.noReview && allAutomatedPassed) {
+    emit({ type: "stage-start", stage: "review" });
+    const review = await runReviewStage({
+      cwd: config.cwd,
+      baselineRef,
+      changedFiles,
+      signal,
+      agentId: config.agentId,
+      local: config.local,
+    });
+    checks.push(review);
+    emit({ type: "stage-done", result: review });
   }
 
   const allPassed = checks.every((c) => c.passed);
@@ -239,7 +283,8 @@ async function runAgentTurn(
 }
 
 /** Main worker loop */
-export async function runWorker(config: WorkerConfig): Promise<WorkerResult> {
+export async function runWorker(inputConfig: WorkerConfig): Promise<WorkerResult> {
+  let config = inputConfig;
   const startTime = Date.now();
   const emit = config.emit ?? (config.json ? jsonEmitter() : dashboardEmitter(config));
   const iterations: IterationResult[] = [];
@@ -257,6 +302,31 @@ export async function runWorker(config: WorkerConfig): Promise<WorkerResult> {
 
     // 3. Generate persistent session ID
     const sessionId = crypto.randomUUID();
+
+    // 3b. Spec-test TDD stage (before coding begins)
+    if (!config.noSpecTests) {
+      emit({ type: "stage-start", stage: "spec-test" });
+      const specResult = await runSpecTestStage({
+        cwd: config.cwd,
+        task: config.task,
+        signal: new AbortController().signal,
+        agentId: config.agentId,
+        local: config.local,
+      });
+      emit({
+        type: "stage-done",
+        result: {
+          stage: "spec-test",
+          passed: specResult.ok,
+          durationMs: specResult.durationMs,
+          error: specResult.error,
+          files: specResult.testFiles,
+        },
+      });
+      if (specResult.ok && specResult.testFiles.length > 0) {
+        config = { ...config, task: augmentTaskWithSpecs(config.task, specResult.testFiles) };
+      }
+    }
 
     // 4. Iteration loop
     let lastFingerprint = "";
@@ -305,7 +375,7 @@ export async function runWorker(config: WorkerConfig): Promise<WorkerResult> {
 
       // Run verification
       const abort = new AbortController();
-      const verify = await runVerification(changedFiles, config, abort.signal, emit);
+      const verify = await runVerification(changedFiles, config, baselineRef, abort.signal, emit);
       emit({
         type: "verify-done",
         iteration: i,

@@ -29,6 +29,14 @@ export type WorkerConfig = {
   local: boolean;
   /** Skip browser inspection */
   noBrowser: boolean;
+  /** Skip coverage-diff stage */
+  noCoverage: boolean;
+  /** Skip screenshot-diff stage */
+  noScreenshotDiff: boolean;
+  /** Skip review-agent stage */
+  noReview: boolean;
+  /** Skip spec-test TDD stage */
+  noSpecTests: boolean;
   /** Output JSONL events instead of dashboard */
   json: boolean;
   /** Consecutive stall limit before aborting (default 3) */

@@ -21,7 +21,7 @@ export type StageContext = {
 };
 
 /** Run a shell command and capture output. Returns exit code and combined output. */
-async function runCommand(
+export async function runCommand(
   command: string,
   args: string[],
   opts: { cwd: string; signal: AbortSignal; timeoutMs: number },
