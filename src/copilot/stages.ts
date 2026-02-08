@@ -139,12 +139,56 @@ export async function runTypecheckStage(ctx: StageContext): Promise<StageResult>
   }
 }
 
+/** Check if a source file should have colocated tests */
+export function needsTests(file: string): boolean {
+  // Not a TS/TSX source file
+  if (!/\.tsx?$/.test(file)) {
+    return false;
+  }
+  // Already a test file
+  if (/\.(test|e2e\.test)\.(ts|tsx)$/.test(file)) {
+    return false;
+  }
+  // Type declarations
+  if (file.endsWith(".d.ts")) {
+    return false;
+  }
+  // Type-only files
+  if (/[-/]types?\.(ts|tsx)$/.test(file)) {
+    return false;
+  }
+  // Re-export barrels
+  if (/\/index\.tsx?$/.test(file) || file === "index.ts" || file === "index.tsx") {
+    return false;
+  }
+  // Config files
+  if (/\.config\.(ts|tsx|js|mjs)$/.test(file)) {
+    return false;
+  }
+  // Non-code files that happen to end in .ts-like
+  if (/\.(json|md|css|scss|svg)$/.test(file)) {
+    return false;
+  }
+  return true;
+}
+
 /** Stage 3: Run tests for changed files (smart discovery) */
 export async function runTestStage(ctx: StageContext): Promise<StageResult> {
   const start = Date.now();
   const testFiles = discoverTestFiles(ctx.changedFiles, ctx.cwd);
 
   if (testFiles.length === 0) {
+    // Check if there are source files that SHOULD have tests
+    const sourceFilesNeedingTests = ctx.changedFiles.filter((f) => needsTests(f));
+    if (sourceFilesNeedingTests.length > 0) {
+      return {
+        stage: "test",
+        passed: false,
+        durationMs: Date.now() - start,
+        error: `No tests found for changed source files:\n${sourceFilesNeedingTests.join("\n")}\n\nWrite colocated .test.ts files for each source file.`,
+        files: [],
+      };
+    }
     return { stage: "test", passed: true, durationMs: Date.now() - start, files: [] };
   }
 

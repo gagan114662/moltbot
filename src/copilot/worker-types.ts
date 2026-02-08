@@ -37,6 +37,12 @@ export type WorkerConfig = {
   noReview: boolean;
   /** Skip spec-test TDD stage */
   noSpecTests: boolean;
+  /** Skip deep UX evaluation stage */
+  noUxEval: boolean;
+  /** Max interaction steps for UX eval (default 10) */
+  uxEvalSteps: number;
+  /** Sample size for matrix testing in UX eval (default 5) */
+  uxEvalSample: number;
   /** Output JSONL events instead of dashboard */
   json: boolean;
   /** Consecutive stall limit before aborting (default 3) */

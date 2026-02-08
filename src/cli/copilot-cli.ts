@@ -116,6 +116,9 @@ export function registerCopilotCli(program: Command): void {
     .option("--no-screenshot-diff", "Skip screenshot-diff stage")
     .option("--no-review", "Skip review-agent stage")
     .option("--no-spec-tests", "Skip spec-test TDD stage")
+    .option("--no-ux-eval", "Skip deep UX evaluation stage")
+    .option("--ux-eval-steps <n>", "Max interaction steps for UX eval", "10")
+    .option("--ux-eval-sample <n>", "Sample size for matrix testing", "5")
     .option("--app-url <url>", "URL for video/browser verification")
     .option("--json", "Output JSONL events instead of dashboard", false)
     .action(async (task, opts) => {
@@ -133,6 +136,9 @@ export function registerCopilotCli(program: Command): void {
         noScreenshotDiff: !opts.screenshotDiff,
         noReview: !opts.review,
         noSpecTests: !opts.specTests,
+        noUxEval: !opts.uxEval,
+        uxEvalSteps: Number.parseInt(opts.uxEvalSteps, 10) || 10,
+        uxEvalSample: Number.parseInt(opts.uxEvalSample, 10) || 5,
         appUrl: opts.appUrl,
         agentId: opts.agent,
         thinking: opts.thinking,

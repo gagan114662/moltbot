@@ -8,6 +8,8 @@
 
 import { execSync } from "node:child_process";
 import crypto from "node:crypto";
+import fs from "node:fs";
+import path from "node:path";
 import type { StageResult } from "./types.js";
 import type { WorkerConfig, WorkerResult, IterationResult, WorkerEvent } from "./worker-types.js";
 import { agentCliCommand } from "../commands/agent-via-gateway.js";
@@ -18,6 +20,7 @@ import { runCoverageDiffStage } from "./stages-coverage.js";
 import { runReviewStage } from "./stages-review.js";
 import { runScreenshotDiffStage } from "./stages-screenshot-diff.js";
 import { augmentTaskWithSpecs, runSpecTestStage } from "./stages-spec-tests.js";
+import { runUxEvalStage } from "./stages-ux-eval.js";
 import { runLintStage, runTypecheckStage, runTestStage } from "./stages.js";
 import { runVideoVerification } from "./video-verify.js";
 import { createWorkerDashboard } from "./worker-dashboard.js";
@@ -84,31 +87,65 @@ export function getChangedFiles(cwd: string, baselineRef: string): string[] {
   }
 }
 
+/** Try to read CLAUDE.md from the workspace for project context */
+function readProjectContext(cwd: string): string {
+  const candidates = ["CLAUDE.md", ".claude/CLAUDE.md"];
+  for (const name of candidates) {
+    try {
+      const content = fs.readFileSync(path.join(cwd, name), "utf-8");
+      if (content.trim()) {
+        // Truncate to keep prompt reasonable
+        return content.length > 2000 ? content.slice(0, 2000) + "\n... (truncated)" : content;
+      }
+    } catch {
+      // Not found, try next
+    }
+  }
+  return "";
+}
+
 /** Build the SR engineer system prompt */
-function buildSystemPrompt(task: string): string {
-  return [
+function buildSystemPrompt(cwd: string, task: string): string {
+  const projectContext = readProjectContext(cwd);
+
+  const sections: string[] = [
     "You are a senior software engineer working autonomously on a coding task.",
     "You have full access to the codebase via tools: Read, Write, Edit, and exec (bash).",
     "",
     "Your workflow:",
-    "1. Read relevant files to understand the codebase context",
+    "1. Read relevant files to understand the codebase context and existing patterns",
     "2. Plan your approach",
     "3. Implement the changes using Write/Edit tools",
-    "4. Run any necessary commands (install deps, format, etc.)",
+    "4. Write tests for all new/modified functionality",
+    "5. Run `pnpm test` to verify — fix any failures before handing off",
+    "6. Run `pnpm check` (lint + format) and fix issues",
     "",
     "After you finish, an automated verification pipeline will check your work",
-    "(lint, typecheck, tests). If issues are found, you will receive the errors",
-    "and get another chance to fix them.",
+    "(lint, typecheck, tests, browser UX evaluation). If issues are found, you",
+    "will receive the errors and get another chance to fix them.",
+  ];
+
+  // Quality requirements
+  sections.push(
     "",
-    "Guidelines:",
+    "## Quality Requirements",
+    "- You MUST write tests for all new/modified functionality — no exceptions",
+    "- Test framework: vitest (describe, it, expect)",
+    "- Test placement: colocated *.test.ts files next to source",
     "- Write clean, typed TypeScript (no `any`)",
-    "- Follow existing code patterns and conventions",
-    "- Add tests for new functionality when appropriate",
+    "- Follow existing code patterns and conventions — read before writing",
     "- Keep changes focused on the task",
     "- Do NOT commit or push — the caller handles that",
-    "",
-    `TASK: ${task}`,
-  ].join("\n");
+  );
+
+  // Project context from CLAUDE.md
+  if (projectContext) {
+    sections.push("", "## Project Context", projectContext);
+  }
+
+  sections.push("", `TASK: ${task}`);
+
+  return sections.join("\n");
 }
 
 /** Build feedback prompt from failed verification */
@@ -224,7 +261,25 @@ async function runVerification(
     emit({ type: "stage-done", result: screenshotDiff });
   }
 
-  // Review-agent (advisory-only, after all automated checks pass)
+  // Deep UX evaluation (after browser pre-gate passes)
+  const browserPassed = checks.every((c) => c.passed);
+  if (!config.noUxEval && browserPassed && !config.noBrowser) {
+    emit({ type: "stage-start", stage: "ux-eval" });
+    const uxEval = await runUxEvalStage({
+      cwd: config.cwd,
+      criteria: config.task,
+      appUrl: config.appUrl,
+      signal,
+      maxSteps: config.uxEvalSteps,
+      sample: config.uxEvalSample,
+      agentId: config.agentId,
+      local: config.local,
+    });
+    checks.push(uxEval);
+    emit({ type: "stage-done", result: uxEval });
+  }
+
+  // Review-agent (blocks on high-confidence issues)
   const allAutomatedPassed = checks.every((c) => c.passed);
   if (!config.noReview && allAutomatedPassed) {
     emit({ type: "stage-start", stage: "review" });
@@ -262,7 +317,7 @@ async function runAgentTurn(
       timeout: String(config.turnTimeoutSeconds),
       local: config.local,
       json: true,
-      extraSystemPrompt: isFirstTurn ? buildSystemPrompt(config.task) : undefined,
+      extraSystemPrompt: isFirstTurn ? buildSystemPrompt(config.cwd, config.task) : undefined,
     },
     defaultRuntime,
   );

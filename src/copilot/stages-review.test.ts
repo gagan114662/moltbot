@@ -4,11 +4,12 @@ import { parseReviewFindings, getChangedHunks } from "./stages-review.js";
 describe("parseReviewFindings", () => {
   const changedFiles = new Set(["src/foo.ts", "src/bar.ts"]);
 
-  it("parses valid ISSUE lines", () => {
+  it("parses ISSUE lines with confidence levels", () => {
     const output = [
       "Some preamble text",
-      "ISSUE: src/foo.ts:10 - Missing null check before access",
-      "ISSUE: src/bar.ts:25 - Race condition in async handler",
+      "ISSUE: [high] src/foo.ts:10 - Missing null check before access",
+      "ISSUE: [med] src/bar.ts:25 - Possible race condition in async handler",
+      "ISSUE: [low] src/foo.ts:11 - Consider adding a comment",
       "This is not an issue line",
     ].join("\n");
 
@@ -17,13 +18,26 @@ describe("parseReviewFindings", () => {
     hunks.set("src/bar.ts", new Set([23, 24, 25, 26, 27]));
 
     const issues = parseReviewFindings(output, changedFiles, hunks);
-    expect(issues).toHaveLength(2);
-    expect(issues[0]).toContain("src/foo.ts:10");
-    expect(issues[1]).toContain("src/bar.ts:25");
+    expect(issues).toHaveLength(3);
+    expect(issues[0].confidence).toBe("high");
+    expect(issues[0].file).toBe("src/foo.ts");
+    expect(issues[0].line).toBe(10);
+    expect(issues[1].confidence).toBe("med");
+    expect(issues[2].confidence).toBe("low");
+  });
+
+  it("defaults to med confidence for old format without brackets", () => {
+    const output = "ISSUE: src/foo.ts:10 - Missing null check\n";
+    const hunks = new Map<string, Set<number>>();
+    hunks.set("src/foo.ts", new Set([8, 9, 10, 11, 12]));
+
+    const issues = parseReviewFindings(output, changedFiles, hunks);
+    expect(issues).toHaveLength(1);
+    expect(issues[0].confidence).toBe("med");
   });
 
   it("filters out issues referencing files not in diff", () => {
-    const output = "ISSUE: src/unknown.ts:5 - Some issue\n";
+    const output = "ISSUE: [high] src/unknown.ts:5 - Some issue\n";
     const hunks = new Map<string, Set<number>>();
 
     const issues = parseReviewFindings(output, changedFiles, hunks);
@@ -31,18 +45,18 @@ describe("parseReviewFindings", () => {
   });
 
   it("filters out issues with lines outside changed hunks", () => {
-    const output = "ISSUE: src/foo.ts:100 - Issue at line 100\n";
+    const output = "ISSUE: [high] src/foo.ts:100 - Issue at line 100\n";
     const hunks = new Map<string, Set<number>>();
-    hunks.set("src/foo.ts", new Set([5, 6, 7])); // Changed lines are 5-7, not 100
+    hunks.set("src/foo.ts", new Set([5, 6, 7]));
 
     const issues = parseReviewFindings(output, changedFiles, hunks);
     expect(issues).toHaveLength(0);
   });
 
   it("allows issues within ±5 lines of a changed hunk", () => {
-    const output = "ISSUE: src/foo.ts:12 - Off by one error\n";
+    const output = "ISSUE: [high] src/foo.ts:12 - Off by one error\n";
     const hunks = new Map<string, Set<number>>();
-    hunks.set("src/foo.ts", new Set([10])); // Line 12 is within ±5 of line 10
+    hunks.set("src/foo.ts", new Set([10]));
 
     const issues = parseReviewFindings(output, changedFiles, hunks);
     expect(issues).toHaveLength(1);
@@ -53,6 +67,15 @@ describe("parseReviewFindings", () => {
     const hunks = new Map<string, Set<number>>();
     const issues = parseReviewFindings(output, changedFiles, hunks);
     expect(issues).toHaveLength(0);
+  });
+
+  it("includes text field in parsed issues", () => {
+    const output = "ISSUE: [high] src/foo.ts:10 - Bug here\n";
+    const hunks = new Map<string, Set<number>>();
+    hunks.set("src/foo.ts", new Set([10]));
+
+    const issues = parseReviewFindings(output, changedFiles, hunks);
+    expect(issues[0].text).toBe("[high] src/foo.ts:10 - Bug here");
   });
 });
 

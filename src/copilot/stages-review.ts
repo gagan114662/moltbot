@@ -13,20 +13,30 @@ import { defaultRuntime } from "../runtime.js";
 const MAX_DIFF_CHARS = 15_000;
 const REVIEW_TIMEOUT_S = 120;
 
+export type ReviewIssue = {
+  confidence: "high" | "med" | "low";
+  file: string;
+  line: number;
+  description: string;
+  text: string;
+};
+
 /** Parse structured review output into validated issues. */
 export function parseReviewFindings(
   output: string,
   changedFiles: Set<string>,
   changedHunks: Map<string, Set<number>>,
-): string[] {
-  const issues: string[] = [];
-  // Match: ISSUE: <file>:<line> - <description>
-  const issueRe = /^ISSUE:\s*([^:]+):(\d+)\s*-\s*(.+)$/gm;
+): ReviewIssue[] {
+  const issues: ReviewIssue[] = [];
+  // Match: ISSUE: [high|med|low] <file>:<line> - <description>
+  // Also supports old format without confidence: ISSUE: <file>:<line> - <description>
+  const issueRe = /^ISSUE:\s*(?:\[(high|med|low)]\s*)?([^:]+):(\d+)\s*-\s*(.+)$/gim;
   let match = issueRe.exec(output);
   while (match) {
-    const file = match[1].trim();
-    const line = Number.parseInt(match[2], 10);
-    const description = match[3].trim();
+    const confidence = (match[1]?.toLowerCase() ?? "med") as ReviewIssue["confidence"];
+    const file = match[2].trim();
+    const line = Number.parseInt(match[3], 10);
+    const description = match[4].trim();
 
     // Validate: file must be in the diff
     if (!changedFiles.has(file)) {
@@ -50,7 +60,13 @@ export function parseReviewFindings(
       }
     }
 
-    issues.push(`${file}:${line} - ${description}`);
+    issues.push({
+      confidence,
+      file,
+      line,
+      description,
+      text: `[${confidence}] ${file}:${line} - ${description}`,
+    });
     match = issueRe.exec(output);
   }
   return issues;
@@ -133,9 +149,9 @@ export async function runReviewStage(ctx: ReviewContext): Promise<StageResult> {
     "Your job is to find bugs, security issues, and logic errors in the diff below.",
     "",
     "Rules:",
-    "- ONLY report issues you are highly confident about",
     "- Each issue MUST reference a specific file and line from the diff",
-    "- Use EXACTLY this format: ISSUE: <file>:<line> - <description>",
+    "- Use EXACTLY this format: ISSUE: [high|med|low] <file>:<line> - <description>",
+    "- HIGH = definite bug, crash, or security flaw. MED = likely issue. LOW = suggestion.",
     "- Do NOT report style issues, naming preferences, or minor improvements",
     "- Focus on: correctness bugs, race conditions, security flaws, unhandled edge cases",
     "- If no issues found, say: NO ISSUES FOUND",
@@ -175,15 +191,26 @@ export async function runReviewStage(ctx: ReviewContext): Promise<StageResult> {
     const changedHunks = getChangedHunks(ctx.cwd, ctx.baselineRef);
     const issues = parseReviewFindings(text, changedFilesSet, changedHunks);
 
-    // Advisory-only: always passes
+    // Block on high-confidence issues; med/low are advisory
+    const highConfidence = issues.filter((i) => i.confidence === "high");
+    const advisory = issues.filter((i) => i.confidence !== "high");
+
+    const errorParts: string[] = [];
+    if (highConfidence.length > 0) {
+      errorParts.push(`Blocking issues:\n${highConfidence.map((i) => i.text).join("\n")}`);
+    }
+    if (advisory.length > 0) {
+      errorParts.push(`Advisory:\n${advisory.map((i) => i.text).join("\n")}`);
+    }
+
     return {
       stage: "review",
-      passed: true,
+      passed: highConfidence.length === 0,
       durationMs: Date.now() - start,
-      error: issues.length > 0 ? `Review findings (advisory):\n${issues.join("\n")}` : undefined,
+      error: errorParts.length > 0 ? errorParts.join("\n\n") : undefined,
     };
   } catch {
-    // Review agent crashed/timed out — silently pass
+    // Review agent crashed/timed out — pass (can't block on nothing)
     return {
       stage: "review",
       passed: true,
