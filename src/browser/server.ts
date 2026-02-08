@@ -3,6 +3,7 @@ import express from "express";
 import type { BrowserRouteRegistrar } from "./routes/types.js";
 import { loadConfig } from "../config/config.js";
 import { createSubsystemLogger } from "../logging/subsystem.js";
+import { cleanStaleBrowserProcesses } from "./chrome.stale-cleanup.js";
 import { resolveBrowserConfig, resolveProfile } from "./config.js";
 import { ensureChromeExtensionRelayServer } from "./extension-relay.js";
 import { registerBrowserRoutes } from "./routes/index.js";
@@ -16,6 +17,9 @@ export async function startBrowserControlServerFromConfig(): Promise<BrowserServ
   if (state) {
     return state;
   }
+
+  // Kill any Chrome processes orphaned by a previous crashed run.
+  cleanStaleBrowserProcesses();
 
   const cfg = loadConfig();
   const resolved = resolveBrowserConfig(cfg.browser, cfg);

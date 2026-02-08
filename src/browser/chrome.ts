@@ -18,6 +18,7 @@ import {
   ensureProfileCleanExit,
   isProfileDecorated,
 } from "./chrome.profile-decoration.js";
+import { trackChromePid, untrackChromePid } from "./chrome.stale-cleanup.js";
 import {
   DEFAULT_OPENCLAW_BROWSER_COLOR,
   DEFAULT_OPENCLAW_BROWSER_PROFILE_NAME,
@@ -298,6 +299,9 @@ export async function launchOpenClawChrome(
   }
 
   const pid = proc.pid ?? -1;
+  if (pid > 0) {
+    trackChromePid(pid);
+  }
   log.info(
     `🦞 openclaw browser started (${exe.kind}) profile "${profile.name}" on 127.0.0.1:${profile.cdpPort} (pid ${pid})`,
   );
@@ -315,6 +319,7 @@ export async function launchOpenClawChrome(
 export async function stopOpenClawChrome(running: RunningChrome, timeoutMs = 2500) {
   const proc = running.proc;
   if (proc.killed) {
+    untrackChromePid(running.pid);
     return;
   }
   try {
@@ -329,6 +334,7 @@ export async function stopOpenClawChrome(running: RunningChrome, timeoutMs = 250
       break;
     }
     if (!(await isChromeReachable(cdpUrlForPort(running.cdpPort), 200))) {
+      untrackChromePid(running.pid);
       return;
     }
     await new Promise((r) => setTimeout(r, 100));
@@ -339,4 +345,5 @@ export async function stopOpenClawChrome(running: RunningChrome, timeoutMs = 250
   } catch {
     // ignore
   }
+  untrackChromePid(running.pid);
 }
