@@ -572,6 +572,14 @@ function buildChatCommands(): ChatCommandDefinition[] {
         },
       ],
     }),
+    defineChatCommand({
+      key: "work",
+      description: "Run an autonomous coding task.",
+      textAlias: "/work",
+      scope: "text",
+      category: "tools",
+      acceptsArgs: true,
+    }),
     ...listChannelDocks()
       .filter((dock) => dock.capabilities.nativeCommands)
       .map((dock) => defineDockCommand(dock)),

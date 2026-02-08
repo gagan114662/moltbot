@@ -31,6 +31,7 @@ import {
 } from "./commands-session.js";
 import { handleSubagentsCommand } from "./commands-subagents.js";
 import { handleTtsCommands } from "./commands-tts.js";
+import { handleWorkCommand } from "./commands-work.js";
 import { routeReply } from "./route-reply.js";
 
 let HANDLERS: CommandHandler[] | null = null;
@@ -59,6 +60,7 @@ export async function handleCommands(params: HandleCommandsParams): Promise<Comm
       handleModelsCommand,
       handleStopCommand,
       handleCompactCommand,
+      handleWorkCommand,
       handleAbortTrigger,
     ];
   }
