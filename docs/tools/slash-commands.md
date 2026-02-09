@@ -93,7 +93,7 @@ Text + native (when enabled):
 - `/bash <command>` (host-only; alias for `! <command>`; requires `commands.bash: true` + `tools.elevated` allowlists)
 
 - `/work <task>` (run an autonomous coding task; `/work stop` to cancel, `/work status` to check)
-- `/qa <criteria>` (standalone QA evaluation; options: `--steps N`, `--sample N`, `--url <url>`, `--tmux <target>`, `agent=<id>`)
+- `/qa <criteria>` (standalone QA evaluation; options: `--steps N`, `--sample N`, `--url <url>`, `--tmux <target>`, `--voice`, `agent=<id>`)
 
 Text-only:
 

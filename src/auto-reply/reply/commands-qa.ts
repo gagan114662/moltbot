@@ -7,17 +7,23 @@
  *   /qa --sample 3 <criteria>        — Sample 3 combos for matrix tests
  *   /qa --url http://... <criteria>  — Explicit app URL
  *   /qa --tmux <target> <criteria>   — Send nudge to tmux pane (default: moltbot:0.0)
+ *   /qa --voice <criteria>           — Voice QA (macOS, headed Chrome)
  *   /qa agent=v4 <criteria>          — Use specific agent
  */
 
+import fs from "node:fs";
+import os from "node:os";
+import path from "node:path";
 import type { CopilotFeedback } from "../../copilot/types.js";
 import type { CommandHandler } from "./commands-types.js";
 import type { RouteReplyParams } from "./route-reply.js";
 import { resolveAgentWorkspaceDir, resolveSessionAgentId } from "../../agents/agent-scope.js";
+import { resolveChromePath } from "../../copilot/browser-inspect.js";
 import { writeFeedbackToTarget } from "../../copilot/feedback.js";
 import { bootstrapQaHooks } from "../../copilot/qa-bootstrap.js";
 import { formatUxReport, runUxEvalStage } from "../../copilot/stages-ux-eval.js";
 import { DEFAULT_TMUX_TARGET, tmuxSendKeys } from "../../copilot/tmux-send.js";
+import { formatVoiceReport, runVoiceQa } from "../../copilot/voice-qa.js";
 import { logVerbose } from "../../globals.js";
 import { routeReply } from "./route-reply.js";
 
@@ -27,6 +33,7 @@ export function parseQaFlags(input: string): {
   url?: string;
   agentId?: string;
   tmuxTarget: string;
+  voice: boolean;
   criteria: string;
 } {
   let steps = 10;
@@ -34,6 +41,14 @@ export function parseQaFlags(input: string): {
   let url: string | undefined;
   let agentId: string | undefined;
   let tmuxTarget = DEFAULT_TMUX_TARGET;
+  let voice = false;
+
+  // Extract --voice
+  const voiceMatch = input.match(/--voice\b/);
+  if (voiceMatch) {
+    voice = true;
+    input = input.replace(voiceMatch[0], "").trim();
+  }
 
   // Extract --steps N
   const stepsMatch = input.match(/--steps\s+(\d+)/);
@@ -70,7 +85,7 @@ export function parseQaFlags(input: string): {
     input = input.replace(agentMatch[0], "").trim();
   }
 
-  return { steps, sample, url, agentId, tmuxTarget, criteria: input.trim() };
+  return { steps, sample, url, agentId, tmuxTarget, voice, criteria: input.trim() };
 }
 
 export const handleQaCommand: CommandHandler = async (params, allowTextCommands) => {
@@ -105,6 +120,7 @@ export const handleQaCommand: CommandHandler = async (params, allowTextCommands)
           "  --sample N         Sample size for matrix testing (default: 5)",
           "  --url <url>        Explicit app URL",
           "  --tmux <target>    Tmux pane for nudge (default: moltbot:0.0)",
+          "  --voice            Voice QA (macOS, headed Chrome, fake mic)",
           "  agent=<id>         Use specific agent",
           "",
           "Example: /qa agent=v4 test the tutor board renders and drawing tools work",
@@ -154,9 +170,68 @@ export const handleQaCommand: CommandHandler = async (params, allowTextCommands)
   // Fire and forget — send progress, then result
   void routeReply({
     ...routeParams,
-    payload: { text: `QA started: ${flags.criteria.slice(0, 100)}...` },
+    payload: {
+      text: `${flags.voice ? "Voice " : ""}QA started: ${flags.criteria.slice(0, 100)}...`,
+    },
     mirror: false,
   });
+
+  // Voice QA path — separate from standard UX eval
+  if (flags.voice) {
+    const chromePath = resolveChromePath();
+    if (!chromePath) {
+      void routeReply({
+        ...routeParams,
+        payload: { text: "Voice QA failed: Chrome not found. Install Google Chrome." },
+      });
+      return { shouldContinue: false };
+    }
+
+    const evidenceDir = path.join(os.tmpdir(), `voice-qa-evidence-${Date.now()}`);
+    fs.mkdirSync(evidenceDir, { recursive: true });
+
+    runVoiceQa({
+      appUrl: flags.url ?? "http://localhost:3000/app",
+      prompts: [flags.criteria],
+      chromePath,
+      evidenceDir,
+    })
+      .then(async (results) => {
+        const report = `Voice QA Report\n\n${formatVoiceReport(results)}`;
+        const allPassed = results.every((r) => r.passed);
+
+        const feedback: CopilotFeedback = {
+          timestamp: new Date().toISOString(),
+          ok: allPassed,
+          durationMs: 0,
+          gitRef: "voice-qa",
+          triggerFiles: [],
+          checks: results.map((r) => ({
+            stage: "voice-qa" as const,
+            passed: r.passed,
+            durationMs: 0,
+            error: r.error,
+          })),
+          summary: formatVoiceReport(results),
+        };
+        await writeFeedbackToTarget(cwd, targetCwd, feedback);
+
+        const nudge = allPassed
+          ? "Voice QA passed — tutor responded to all prompts."
+          : `Voice QA failed: ${feedback.summary.split("\n")[0]}. Read QA-FEEDBACK.md for details.`;
+        tmuxSendKeys(flags.tmuxTarget, nudge);
+
+        void routeReply({ ...routeParams, payload: { text: report } });
+      })
+      .catch((err) => {
+        void routeReply({
+          ...routeParams,
+          payload: { text: `Voice QA failed: ${String(err)}` },
+        });
+      });
+
+    return { shouldContinue: false };
+  }
 
   runUxEvalStage({
     cwd: targetCwd,

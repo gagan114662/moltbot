@@ -47,15 +47,27 @@ describe("parseQaFlags", () => {
     expect(result.tmuxTarget).toBe("moltbot:0.0");
   });
 
+  it("parses --voice flag", () => {
+    const result = parseQaFlags("--voice test the tutor with speech");
+    expect(result.voice).toBe(true);
+    expect(result.criteria).toBe("test the tutor with speech");
+  });
+
+  it("defaults voice to false", () => {
+    const result = parseQaFlags("test the board");
+    expect(result.voice).toBe(false);
+  });
+
   it("parses all flags together", () => {
     const result = parseQaFlags(
-      "agent=v4 --steps 3 --sample 2 --url http://localhost:5173 --tmux dev:1.0 test everything",
+      "agent=v4 --steps 3 --sample 2 --url http://localhost:5173 --tmux dev:1.0 --voice test everything",
     );
     expect(result.agentId).toBe("v4");
     expect(result.steps).toBe(3);
     expect(result.sample).toBe(2);
     expect(result.url).toBe("http://localhost:5173");
     expect(result.tmuxTarget).toBe("dev:1.0");
+    expect(result.voice).toBe(true);
     expect(result.criteria).toBe("test everything");
   });
 });
