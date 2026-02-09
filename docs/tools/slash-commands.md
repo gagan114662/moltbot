@@ -92,6 +92,9 @@ Text + native (when enabled):
 - `/queue <mode>` (plus options like `debounce:2s cap:25 drop:summarize`; send `/queue` to see current settings)
 - `/bash <command>` (host-only; alias for `! <command>`; requires `commands.bash: true` + `tools.elevated` allowlists)
 
+- `/work <task>` (run an autonomous coding task; `/work stop` to cancel, `/work status` to check)
+- `/qa <criteria>` (standalone QA evaluation; options: `--steps N`, `--sample N`, `--url <url>`, `--tmux <target>`, `agent=<id>`)
+
 Text-only:
 
 - `/compact [instructions]` (see [/concepts/compaction](/concepts/compaction))

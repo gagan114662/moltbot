@@ -580,6 +580,14 @@ function buildChatCommands(): ChatCommandDefinition[] {
       category: "tools",
       acceptsArgs: true,
     }),
+    defineChatCommand({
+      key: "qa",
+      description: "Run standalone QA evaluation.",
+      textAlias: "/qa",
+      scope: "text",
+      category: "tools",
+      acceptsArgs: true,
+    }),
     ...listChannelDocks()
       .filter((dock) => dock.capabilities.nativeCommands)
       .map((dock) => defineDockCommand(dock)),
