@@ -18,6 +18,16 @@ type SessionSummary = {
   messageCount: number;
 };
 
+export type RuleEffectivenessEntry = {
+  rule: string;
+  verdict: string;
+  preRate: number;
+  postRate: number;
+  preCount: number;
+  postCount: number;
+  daysSincePromotion: number;
+};
+
 type InsightsReport = {
   generated: string;
   sessionCount: number;
@@ -28,6 +38,7 @@ type InsightsReport = {
   failureClusters: FailureCluster[];
   dodGaps: string[];
   recommendations: string[];
+  ruleEffectiveness?: RuleEffectivenessEntry[];
 };
 
 function collectSessions(limit: number): SessionSummary[] {
@@ -266,6 +277,22 @@ export function formatInsightsMarkdown(report: InsightsReport): string {
     lines.push("");
     for (const gap of report.dodGaps) {
       lines.push(`- ${gap}`);
+    }
+    lines.push("");
+  }
+
+  // Rule Effectiveness (Phase C)
+  if (report.ruleEffectiveness && report.ruleEffectiveness.length > 0) {
+    lines.push("## Rule Effectiveness");
+    lines.push("");
+    for (const re of report.ruleEffectiveness) {
+      const preStr = re.preRate.toFixed(1);
+      const postStr = re.postRate.toFixed(1);
+      const retired = re.verdict === "ineffective" ? " — RETIRED" : "";
+      // Feedback #5: include counts and observation window
+      lines.push(
+        `- **${re.rule}** → ${re.verdict} (pre: ${preStr}/day [${re.preCount}], post: ${postStr}/day [${re.postCount}], ${re.daysSincePromotion} days)${retired}`,
+      );
     }
     lines.push("");
   }

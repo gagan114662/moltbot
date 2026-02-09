@@ -5,6 +5,7 @@
  * recurring patterns into LEARNED.md rules with deduplication,
  * state tracking, and section routing.
  */
+import crypto from "node:crypto";
 import fs from "node:fs";
 import { type FailureCluster, clusterFailures, parseFailuresJsonl } from "./failures-digest.js";
 
@@ -20,7 +21,21 @@ export type RuleCandidate = {
   section: string;
 };
 
-export type AutoLearnedState = Record<string, { ruleAdded: string; count: number }>;
+export type AutoLearnedState = Record<
+  string,
+  {
+    ruleAdded: string;
+    count: number;
+    // Phase C: effectiveness tracking
+    ruleId?: string;
+    ruleText?: string;
+    countAtPromotion?: number;
+    postPromotionCount?: number;
+    lastChecked?: string;
+    verdict?: "effective" | "ineffective" | "inconclusive";
+    retiredAt?: string;
+  }
+>;
 
 export type SuggestResult = {
   added: string[];
@@ -213,6 +228,15 @@ export function clusterKey(cluster: Pick<FailureCluster, "tool" | "pattern">): s
 }
 
 /**
+ * Stable rule ID combining cluster key + rule text hash (Phase C feedback #4).
+ * Survives minor rule text edits while staying tied to the cluster.
+ */
+export function makeRuleId(key: string, ruleText: string): string {
+  const hash = crypto.createHash("sha256").update(ruleText).digest("hex").slice(0, 8);
+  return `${key}::${hash}`;
+}
+
+/**
  * Check if a rule is a duplicate of any existing rule using Jaccard word similarity.
  * Reuses the same algorithm as shared-context.ts appendSharedRule but standalone.
  */
@@ -392,8 +416,14 @@ export function suggestRules(
     learnedContent = appendRuleToSection(learnedContent, candidate.section, ruleLine);
     existingRules.push(ruleLine); // track for dedup within same batch
 
-    // Update state
-    state[key] = { ruleAdded: today, count: candidate.count };
+    // Update state (Phase C: include countAtPromotion, ruleId, ruleText for effectiveness tracking)
+    state[key] = {
+      ruleAdded: today,
+      count: candidate.count,
+      countAtPromotion: candidate.count,
+      ruleId: makeRuleId(key, candidate.suggestedRule),
+      ruleText: candidate.suggestedRule,
+    };
     result.added.push(candidate.suggestedRule);
   }
 

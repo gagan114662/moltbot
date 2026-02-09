@@ -7,7 +7,8 @@
 //   bun scripts/memory-bridge.ts discover <agent> <text>
 //   bun scripts/memory-bridge.ts shared-context
 //   bun scripts/memory-bridge.ts insights         (daily insights report)
-//   bun scripts/memory-bridge.ts suggest-rules   (Phase B — auto-rule generation)
+//   bun scripts/memory-bridge.ts suggest-rules        (Phase B — auto-rule generation)
+//   bun scripts/memory-bridge.ts check-effectiveness  (Phase C — rule effectiveness tracking)
 
 import fs from "node:fs";
 import path from "node:path";
@@ -15,6 +16,7 @@ import { suggestRules } from "../src/memory/auto-learned.js";
 import { refreshFailuresDigest } from "../src/memory/failures-digest.js";
 import { writeDigestIfChanged } from "../src/memory/failures-digest.js";
 import { generateInsights, formatInsightsMarkdown } from "../src/memory/insights.js";
+import { checkEffectiveness } from "../src/memory/rule-effectiveness.js";
 import { refreshSessionDigest } from "../src/memory/session-digest.js";
 import {
   readSharedLearned,
@@ -192,6 +194,26 @@ function cmdInsights(): void {
   cmdRefreshDigest();
 
   const report = generateInsights(FAILURES_JSONL);
+
+  // Phase C: inject rule effectiveness into the report before formatting
+  const effectivenessResults = checkEffectiveness({
+    failuresJsonlPath: FAILURES_JSONL,
+    learnedMdPath: LEARNED_MD,
+    statePath: AUTO_LEARNED_STATE,
+    retire: true,
+  });
+  if (effectivenessResults.length > 0) {
+    report.ruleEffectiveness = effectivenessResults.map((r) => ({
+      rule: r.rule,
+      verdict: r.verdict,
+      preRate: r.preRate,
+      postRate: r.postRate,
+      preCount: r.preCount,
+      postCount: r.postCount,
+      daysSincePromotion: r.daysSincePromotion,
+    }));
+  }
+
   const markdown = formatInsightsMarkdown(report);
   const written = writeDigestIfChanged(INSIGHTS_PATH, markdown);
 
@@ -208,6 +230,27 @@ function cmdInsights(): void {
 
   // Print to stdout for cron logs
   console.log(markdown);
+}
+
+function cmdCheckEffectiveness(): void {
+  const results = checkEffectiveness({
+    failuresJsonlPath: FAILURES_JSONL,
+    learnedMdPath: LEARNED_MD,
+    statePath: AUTO_LEARNED_STATE,
+    retire: true,
+  });
+
+  if (results.length === 0) {
+    logError("check-effectiveness: no promoted rules to evaluate");
+    return;
+  }
+
+  const effective = results.filter((r) => r.verdict === "effective").length;
+  const ineffective = results.filter((r) => r.verdict === "ineffective").length;
+  const inconclusive = results.filter((r) => r.verdict === "inconclusive").length;
+  logError(
+    `check-effectiveness: ${results.length} rules checked — ${effective} effective, ${ineffective} ineffective, ${inconclusive} inconclusive`,
+  );
 }
 
 function cmdSuggestRules(): void {
@@ -254,9 +297,12 @@ try {
     case "suggest-rules":
       cmdSuggestRules();
       break;
+    case "check-effectiveness":
+      cmdCheckEffectiveness();
+      break;
     default:
       console.error(
-        `Unknown command: ${command}\nUsage: memory-bridge.ts <refresh-digest|search|discover|shared-context|insights|suggest-rules>`,
+        `Unknown command: ${command}\nUsage: memory-bridge.ts <refresh-digest|search|discover|shared-context|insights|suggest-rules|check-effectiveness>`,
       );
       process.exit(1);
   }
