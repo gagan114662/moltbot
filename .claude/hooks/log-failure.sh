@@ -40,3 +40,6 @@ fi
 
 # Refresh failures digest so memory index stays current (async, non-blocking)
 npx tsx scripts/memory-bridge.ts refresh-digest >> memory/bridge.log 2>&1 &
+
+# Auto-suggest rules from recurring failure patterns (Phase B)
+npx tsx scripts/memory-bridge.ts suggest-rules >> memory/bridge.log 2>&1 &

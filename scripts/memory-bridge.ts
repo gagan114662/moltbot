@@ -7,10 +7,11 @@
 //   bun scripts/memory-bridge.ts discover <agent> <text>
 //   bun scripts/memory-bridge.ts shared-context
 //   bun scripts/memory-bridge.ts insights         (daily insights report)
-//   bun scripts/memory-bridge.ts suggest-rules   (Phase B — stubbed)
+//   bun scripts/memory-bridge.ts suggest-rules   (Phase B — auto-rule generation)
 
 import fs from "node:fs";
 import path from "node:path";
+import { suggestRules } from "../src/memory/auto-learned.js";
 import { refreshFailuresDigest } from "../src/memory/failures-digest.js";
 import { writeDigestIfChanged } from "../src/memory/failures-digest.js";
 import { generateInsights, formatInsightsMarkdown } from "../src/memory/insights.js";
@@ -29,6 +30,8 @@ const SESSION_DIGEST = path.join(MEMORY_DIR, "session-digest.md");
 const BRIDGE_LOG = path.join(MEMORY_DIR, "bridge.log");
 const BRIDGE_LOG_BACKUP = path.join(MEMORY_DIR, "bridge.log.1");
 const MAX_LOG_SIZE = 100 * 1024; // 100KB
+const AUTO_LEARNED_STATE = path.join(MEMORY_DIR, "auto-learned-state.json");
+const LEARNED_MD = path.join(MEMORY_DIR, "LEARNED.md");
 const MAX_QUERY_LENGTH = 200;
 const MAX_SEARCH_RESULTS = 5;
 
@@ -208,8 +211,19 @@ function cmdInsights(): void {
 }
 
 function cmdSuggestRules(): void {
-  // Phase B stub — will be implemented once digests are stable
-  logError("suggest-rules: Phase B — not yet implemented");
+  // No cmdRefreshDigest() here — log-failure.sh already triggers refresh-digest
+  // async before calling suggest-rules, avoiding redundant work (user feedback #1).
+  const result = suggestRules(FAILURES_JSONL, LEARNED_MD, AUTO_LEARNED_STATE);
+
+  if (result.added.length > 0) {
+    // One summary discovery line + the list (user feedback #5)
+    const summary = `Auto-learned ${result.added.length} rule(s): ${result.added.join("; ")}`;
+    appendDiscovery(MEMORY_DIR, "auto-learned", summary);
+  }
+
+  logError(
+    `suggest-rules: ${result.added.length} added, ${result.skippedDuplicate} dup, ${result.skippedAlreadyPromoted} already promoted`,
+  );
 }
 
 // --- Main ---
