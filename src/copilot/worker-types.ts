@@ -4,6 +4,7 @@
  * The worker runs an agent → verify → feedback → fix loop.
  */
 
+import type { ProjectToolchain } from "./toolchain.js";
 import type { StageResult, VideoResult } from "./types.js";
 
 export type WorkerConfig = {
@@ -47,6 +48,14 @@ export type WorkerConfig = {
   json: boolean;
   /** Consecutive stall limit before aborting (default 3) */
   stallLimit: number;
+  /** Target project workspace for cross-project feedback delivery */
+  targetWorkspace?: string;
+  /** Skip installing hooks in target project */
+  noBootstrapHooks: boolean;
+  /** Run browser in headed mode (visible window) */
+  headed: boolean;
+  /** Explicit toolchain override (auto-detected from cwd if not set) */
+  toolchain?: ProjectToolchain;
   /** Custom event emitter (overrides dashboard/json emitters) */
   emit?: (event: WorkerEvent) => void;
 };

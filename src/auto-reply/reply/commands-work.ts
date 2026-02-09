@@ -11,6 +11,7 @@ import type { WorkerConfig, WorkerEvent, WorkerResult } from "../../copilot/work
 import type { CommandHandler } from "./commands-types.js";
 import type { RouteReplyParams } from "./route-reply.js";
 import { resolveSessionAgentId } from "../../agents/agent-scope.js";
+import { bootstrapQaHooks } from "../../copilot/qa-bootstrap.js";
 import { runWorker } from "../../copilot/worker.js";
 import { logVerbose } from "../../globals.js";
 import { routeReply } from "./route-reply.js";
@@ -179,6 +180,11 @@ export const handleWorkCommand: CommandHandler = async (params, allowTextCommand
     cfg: params.cfg,
   };
 
+  // Bootstrap QA hooks in target workspace (idempotent)
+  bootstrapQaHooks(cwd).catch((err) => {
+    logVerbose(`bootstrapQaHooks failed: ${String(err)}`);
+  });
+
   // Build WorkerConfig
   const config: WorkerConfig = {
     task: rest,
@@ -201,6 +207,9 @@ export const handleWorkCommand: CommandHandler = async (params, allowTextCommand
     turnTimeoutSeconds: 300,
     local: false,
     json: false,
+    targetWorkspace: cwd,
+    noBootstrapHooks: false,
+    headed: false,
     emit: createChatEmitter(routeParams),
   };
 

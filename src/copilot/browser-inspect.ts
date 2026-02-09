@@ -143,6 +143,7 @@ export async function runBrowserInspectStage(ctx: {
   cwd: string;
   signal: AbortSignal;
   appUrl?: string;
+  headed?: boolean;
 }): Promise<{ result: StageResult; inspect?: BrowserInspectResult }> {
   const start = Date.now();
 
@@ -200,8 +201,9 @@ export async function runBrowserInspectStage(ctx: {
   try {
     browser = await chromium.launch({
       executablePath: chromePath,
-      headless: true,
+      headless: !ctx.headed,
       args: ["--no-default-browser-check", "--disable-features=TranslateUI"],
+      slowMo: ctx.headed ? 200 : 0,
     });
 
     const page = await browser.newPage({ viewport: { width: 1280, height: 720 } });

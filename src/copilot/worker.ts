@@ -10,18 +10,20 @@ import { execSync } from "node:child_process";
 import crypto from "node:crypto";
 import fs from "node:fs";
 import path from "node:path";
+import type { ProjectToolchain } from "./toolchain.js";
 import type { StageResult } from "./types.js";
 import type { WorkerConfig, WorkerResult, IterationResult, WorkerEvent } from "./worker-types.js";
 import { agentCliCommand } from "../commands/agent-via-gateway.js";
 import { defaultRuntime } from "../runtime.js";
 import { runBrowserInspectStage } from "./browser-inspect.js";
-import { buildSummary, writeFeedback } from "./feedback.js";
+import { buildSummary, writeFeedbackToTarget } from "./feedback.js";
 import { runCoverageDiffStage } from "./stages-coverage.js";
 import { runReviewStage } from "./stages-review.js";
 import { runScreenshotDiffStage } from "./stages-screenshot-diff.js";
 import { augmentTaskWithSpecs, runSpecTestStage } from "./stages-spec-tests.js";
 import { runUxEvalStage } from "./stages-ux-eval.js";
 import { runLintStage, runTypecheckStage, runTestStage } from "./stages.js";
+import { detectToolchain } from "./toolchain.js";
 import { runVideoVerification } from "./video-verify.js";
 import { createWorkerDashboard } from "./worker-dashboard.js";
 
@@ -104,21 +106,26 @@ function readProjectContext(cwd: string): string {
   return "";
 }
 
-/** Build the SR engineer system prompt */
-function buildSystemPrompt(cwd: string, task: string): string {
+/** Build the SR engineer system prompt, adapted to the detected toolchain */
+function buildSystemPrompt(cwd: string, task: string, toolchain: ProjectToolchain): string {
   const projectContext = readProjectContext(cwd);
+  const hints = toolchain.promptHints;
 
   const sections: string[] = [
     "You are a senior software engineer working autonomously on a coding task.",
     "You have full access to the codebase via tools: Read, Write, Edit, and exec (bash).",
     "",
+    `IMPORTANT: The target project is at: ${cwd}`,
+    "All file reads, edits, and commands MUST target this directory.",
+    `Use \`cd ${cwd}\` before running any shell commands.`,
+    "",
     "Your workflow:",
-    "1. Read relevant files to understand the codebase context and existing patterns",
+    `1. Read files in ${cwd} to understand the codebase context and existing patterns`,
     "2. Plan your approach",
-    "3. Implement the changes using Write/Edit tools",
+    `3. Implement the changes — use full paths under ${cwd} for Write/Edit tools`,
     "4. Write tests for all new/modified functionality",
-    "5. Run `pnpm test` to verify — fix any failures before handing off",
-    "6. Run `pnpm check` (lint + format) and fix issues",
+    `5. Run \`cd ${cwd} && ${hints.runTests}\` to verify — fix any failures before handing off`,
+    `6. Run \`cd ${cwd} && ${hints.runLint}\` and fix issues`,
     "",
     "After you finish, an automated verification pipeline will check your work",
     "(lint, typecheck, tests, browser UX evaluation). If issues are found, you",
@@ -130,9 +137,9 @@ function buildSystemPrompt(cwd: string, task: string): string {
     "",
     "## Quality Requirements",
     "- You MUST write tests for all new/modified functionality — no exceptions",
-    "- Test framework: vitest (describe, it, expect)",
-    "- Test placement: colocated *.test.ts files next to source",
-    "- Write clean, typed TypeScript (no `any`)",
+    `- Test framework: ${hints.testFramework}`,
+    `- Test placement: ${hints.testPlacement}`,
+    `- Write ${hints.codeStyle}`,
     "- Follow existing code patterns and conventions — read before writing",
     "- Keep changes focused on the task",
     "- Do NOT commit or push — the caller handles that",
@@ -205,6 +212,7 @@ async function runVerification(
   baselineRef: string,
   signal: AbortSignal,
   emit: (event: WorkerEvent) => void,
+  toolchain: ProjectToolchain,
 ): Promise<{ checks: StageResult[]; allPassed: boolean; durationMs: number }> {
   const start = Date.now();
   const checks: StageResult[] = [];
@@ -212,7 +220,10 @@ async function runVerification(
 
   // Lint + typecheck in parallel
   emit({ type: "stage-start", stage: "lint + typecheck" });
-  const [lint, typecheck] = await Promise.all([runLintStage(ctx), runTypecheckStage(ctx)]);
+  const [lint, typecheck] = await Promise.all([
+    runLintStage(ctx, toolchain),
+    runTypecheckStage(ctx, toolchain),
+  ]);
   checks.push(lint, typecheck);
   emit({ type: "stage-done", result: lint });
   emit({ type: "stage-done", result: typecheck });
@@ -220,7 +231,7 @@ async function runVerification(
   // Tests (only if not skipped)
   if (!config.noTests) {
     emit({ type: "stage-start", stage: "test" });
-    const test = await runTestStage(ctx);
+    const test = await runTestStage(ctx, toolchain);
     checks.push(test);
     emit({ type: "stage-done", result: test });
   }
@@ -243,6 +254,7 @@ async function runVerification(
       cwd: config.cwd,
       signal,
       appUrl: config.appUrl,
+      headed: config.headed,
     });
     checks.push(browserResult);
     emit({ type: "stage-done", result: browserResult });
@@ -274,6 +286,7 @@ async function runVerification(
       sample: config.uxEvalSample,
       agentId: config.agentId,
       local: config.local,
+      headed: config.headed,
     });
     checks.push(uxEval);
     emit({ type: "stage-done", result: uxEval });
@@ -305,6 +318,7 @@ async function runAgentTurn(
   config: WorkerConfig,
   sessionId: string,
   isFirstTurn: boolean,
+  toolchain: ProjectToolchain,
 ): Promise<{ response: string; durationMs: number }> {
   const start = Date.now();
 
@@ -317,7 +331,9 @@ async function runAgentTurn(
       timeout: String(config.turnTimeoutSeconds),
       local: config.local,
       json: true,
-      extraSystemPrompt: isFirstTurn ? buildSystemPrompt(config.cwd, config.task) : undefined,
+      extraSystemPrompt: isFirstTurn
+        ? buildSystemPrompt(config.cwd, config.task, toolchain)
+        : undefined,
     },
     defaultRuntime,
   );
@@ -345,6 +361,9 @@ export async function runWorker(inputConfig: WorkerConfig): Promise<WorkerResult
   const iterations: IterationResult[] = [];
   let stashed = false;
   let allChangedFiles: string[] = [];
+
+  // Detect project toolchain (or use explicit override)
+  const toolchain = config.toolchain ?? detectToolchain(config.cwd);
 
   try {
     // 1. Ensure clean working tree
@@ -411,7 +430,7 @@ export async function runWorker(inputConfig: WorkerConfig): Promise<WorkerResult
 
       let agentResult: { response: string; durationMs: number };
       try {
-        agentResult = await runAgentTurn(agentMessage, config, sessionId, i === 1);
+        agentResult = await runAgentTurn(agentMessage, config, sessionId, i === 1, toolchain);
       } catch (err) {
         emit({ type: "error", error: `Agent failed: ${String(err)}` });
         agentResult = { response: "", durationMs: 0 };
@@ -430,7 +449,14 @@ export async function runWorker(inputConfig: WorkerConfig): Promise<WorkerResult
 
       // Run verification
       const abort = new AbortController();
-      const verify = await runVerification(changedFiles, config, baselineRef, abort.signal, emit);
+      const verify = await runVerification(
+        changedFiles,
+        config,
+        baselineRef,
+        abort.signal,
+        emit,
+        toolchain,
+      );
       emit({
         type: "verify-done",
         iteration: i,
@@ -465,8 +491,8 @@ export async function runWorker(inputConfig: WorkerConfig): Promise<WorkerResult
           }
         }
 
-        // Write feedback
-        await writeFeedback(config.cwd, {
+        // Write feedback to both moltbot + target workspace
+        await writeFeedbackToTarget(config.cwd, config.targetWorkspace, {
           timestamp: new Date().toISOString(),
           ok: true,
           durationMs: Date.now() - startTime,
@@ -506,8 +532,8 @@ export async function runWorker(inputConfig: WorkerConfig): Promise<WorkerResult
       });
 
       if (consecutiveStalls >= config.stallLimit) {
-        // Write failure feedback
-        await writeFeedback(config.cwd, {
+        // Write failure feedback to both workspaces
+        await writeFeedbackToTarget(config.cwd, config.targetWorkspace, {
           timestamp: new Date().toISOString(),
           ok: false,
           durationMs: Date.now() - startTime,
@@ -532,7 +558,7 @@ export async function runWorker(inputConfig: WorkerConfig): Promise<WorkerResult
 
     // Max iterations exhausted
     const lastChecks = iterations[iterations.length - 1]?.checks ?? [];
-    await writeFeedback(config.cwd, {
+    await writeFeedbackToTarget(config.cwd, config.targetWorkspace, {
       timestamp: new Date().toISOString(),
       ok: false,
       durationMs: Date.now() - startTime,

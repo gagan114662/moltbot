@@ -9,10 +9,12 @@
  */
 
 import type { Command } from "commander";
+import path from "node:path";
 import type { CopilotConfig } from "../copilot/types.js";
 import type { WorkerConfig } from "../copilot/worker-types.js";
 import { getCopilotStatus, startCopilot, stopCopilot } from "../copilot/copilot.js";
 import { readFeedback } from "../copilot/feedback.js";
+import { bootstrapQaHooks } from "../copilot/qa-bootstrap.js";
 import { runWorker } from "../copilot/worker.js";
 import { defaultRuntime } from "../runtime.js";
 import { theme } from "../terminal/theme.js";
@@ -120,9 +122,20 @@ export function registerCopilotCli(program: Command): void {
     .option("--ux-eval-steps <n>", "Max interaction steps for UX eval", "10")
     .option("--ux-eval-sample <n>", "Sample size for matrix testing", "5")
     .option("--app-url <url>", "URL for video/browser verification")
+    .option("--target <path>", "Target project workspace for cross-project feedback")
+    .option("--no-hooks", "Skip installing QA hooks in target project")
+    .option("--headed", "Run browser checks visibly (non-headless)", false)
     .option("--json", "Output JSONL events instead of dashboard", false)
     .action(async (task, opts) => {
       const cwd = process.cwd();
+
+      const targetWorkspace = opts.target ? path.resolve(opts.target) : undefined;
+      const noBootstrapHooks = !opts.hooks;
+
+      // Bootstrap QA hooks in target workspace (idempotent)
+      if (targetWorkspace && !noBootstrapHooks) {
+        await bootstrapQaHooks(targetWorkspace);
+      }
 
       const config: WorkerConfig = {
         task,
@@ -145,6 +158,9 @@ export function registerCopilotCli(program: Command): void {
         turnTimeoutSeconds: Number.parseInt(opts.timeout, 10) || 300,
         local: opts.local,
         json: opts.json,
+        targetWorkspace,
+        noBootstrapHooks,
+        headed: opts.headed,
       };
 
       try {

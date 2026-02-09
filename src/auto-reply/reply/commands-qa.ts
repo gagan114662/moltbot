@@ -9,9 +9,12 @@
  *   /qa agent=v4 <criteria>          — Use specific agent
  */
 
+import type { CopilotFeedback } from "../../copilot/types.js";
 import type { CommandHandler } from "./commands-types.js";
 import type { RouteReplyParams } from "./route-reply.js";
 import { resolveSessionAgentId } from "../../agents/agent-scope.js";
+import { writeFeedbackToTarget } from "../../copilot/feedback.js";
+import { bootstrapQaHooks } from "../../copilot/qa-bootstrap.js";
 import { formatUxReport, runUxEvalStage } from "../../copilot/stages-ux-eval.js";
 import { logVerbose } from "../../globals.js";
 import { routeReply } from "./route-reply.js";
@@ -128,6 +131,11 @@ export const handleQaCommand: CommandHandler = async (params, allowTextCommands)
     cfg: params.cfg,
   };
 
+  // Bootstrap QA hooks in target workspace (idempotent)
+  bootstrapQaHooks(cwd).catch((err) => {
+    logVerbose(`bootstrapQaHooks failed: ${String(err)}`);
+  });
+
   // Fire and forget — send progress, then result
   void routeReply({
     ...routeParams,
@@ -145,12 +153,31 @@ export const handleQaCommand: CommandHandler = async (params, allowTextCommands)
     agentId,
     local: false,
   })
-    .then((result) => {
+    .then(async (result) => {
       const report = result.uxResult
         ? `QA Report\n\n${formatUxReport(result.uxResult)}`
         : result.error
           ? `QA Report\n\nFailed: ${result.error}`
           : "QA Report\n\nNo results (dev server not found?)";
+
+      // Write feedback to target workspace
+      const feedback: CopilotFeedback = {
+        timestamp: new Date().toISOString(),
+        ok: result.passed,
+        durationMs: result.durationMs,
+        gitRef: "qa-eval",
+        triggerFiles: [],
+        checks: [
+          {
+            stage: result.stage,
+            passed: result.passed,
+            durationMs: result.durationMs,
+            error: result.error,
+          },
+        ],
+        summary: result.uxResult ? formatUxReport(result.uxResult) : (result.error ?? "No results"),
+      };
+      await writeFeedbackToTarget(cwd, cwd, feedback);
 
       void routeReply({ ...routeParams, payload: { text: report } });
     })

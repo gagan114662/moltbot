@@ -21,11 +21,12 @@ import { detectDevServer } from "./video-verify.js";
 
 const DEFAULT_STEPS = 10;
 const DEFAULT_SAMPLE = 5;
-const UX_EVAL_TIMEOUT_S = 180;
+const UX_EVAL_TIMEOUT_S = 300;
 const PAGE_LOAD_TIMEOUT = 30_000;
 const SETTLE_WAIT = 3000;
 const LOADING_CHECK_INTERVAL = 2000;
 const LOADING_MAX_WAIT = 60_000;
+const STEP_TIMEOUT = 60_000;
 
 export type UxEvalContext = {
   /** Working directory */
@@ -44,6 +45,8 @@ export type UxEvalContext = {
   agentId?: string;
   /** Run locally (not via gateway) */
   local: boolean;
+  /** Run browser in headed mode (visible window) */
+  headed?: boolean;
 };
 
 export type UxFinding = {
@@ -145,9 +148,44 @@ type CapturedPage = {
   networkFailures: string[];
   loadTimeMs: number;
   stuckOnLoading: boolean;
+  hasLoginGate: boolean;
   screenshotPath: string;
   interactiveElements: string[];
 };
+
+/** Extract test routes from criteria — both full URLs and bare paths */
+export function extractTestRoutes(appUrl: string, criteria: string): string[] {
+  const base = new URL(appUrl);
+  const routes = [appUrl];
+
+  // Parse explicit full URLs (http://localhost:5173/app) — normalize to base host/port
+  for (const m of criteria.matchAll(/https?:\/\/[^\s,)]+/g)) {
+    try {
+      const parsed = new URL(m[0]);
+      const normalized = new URL(parsed.pathname + parsed.search, base).href;
+      if (!routes.includes(normalized)) {
+        routes.push(normalized);
+      }
+    } catch {
+      // skip malformed URLs
+    }
+  }
+
+  // Parse bare paths: "/app", "/dashboard", "/tutor"
+  for (const m of criteria.matchAll(/(?<=\s|^)(\/[\w-]+(?:\/[\w-]+)*)/g)) {
+    const full = new URL(m[0], base).href;
+    if (!routes.includes(full)) {
+      routes.push(full);
+    }
+  }
+
+  return routes;
+}
+
+/** Check if criteria imply the page should be publicly accessible (no auth) */
+function impliesNoAuth(criteria: string): boolean {
+  return /\b(public|no.?login|no.?auth|landing|unauthenticated|without.?login)\b/i.test(criteria);
+}
 
 /** Capture a single page state using Playwright headless */
 async function capturePage(
@@ -267,6 +305,16 @@ async function capturePage(
     })
     .catch(() => [] as string[]);
 
+  // Detect login gate (password/email inputs without app content)
+  const hasLoginGate = await page
+    .evaluate(() => {
+      const inputs = document.querySelectorAll(
+        'input[type="password"], input[type="email"], input[name="password"]',
+      );
+      return inputs.length > 0;
+    })
+    .catch(() => false);
+
   // Take screenshot
   const safeName = label.replace(/[^a-zA-Z0-9-_]/g, "_").slice(0, 50);
   const screenshotPath = path.join(evidenceDir, `ux-eval-${safeName}.png`);
@@ -285,6 +333,7 @@ async function capturePage(
     networkFailures,
     loadTimeMs,
     stuckOnLoading,
+    hasLoginGate,
     screenshotPath,
     interactiveElements,
   };
@@ -304,6 +353,10 @@ function buildEvidenceReport(captures: CapturedPage[]): string {
       lines.push(
         `⚠ STUCK ON LOADING: Page showed loading state for >${LOADING_MAX_WAIT / 1000}s and never resolved`,
       );
+    }
+
+    if (cap.hasLoginGate) {
+      lines.push("⚠ LOGIN GATE: Page shows login/signup form — app content behind auth");
     }
 
     if (cap.bodyText.length === 0) {
@@ -420,8 +473,9 @@ export async function runUxEvalStage(
   try {
     browser = await chromium.launch({
       executablePath: chromePath,
-      headless: true,
+      headless: !ctx.headed,
       args: ["--no-default-browser-check", "--disable-features=TranslateUI"],
+      slowMo: ctx.headed ? 300 : 0,
     });
 
     const page = await browser.newPage({
@@ -430,36 +484,44 @@ export async function runUxEvalStage(
 
     const captures: CapturedPage[] = [];
 
-    // Step 1: Capture the main page
-    const mainCapture = await capturePage(page, appUrl, evidenceDir, "main");
-    captures.push(mainCapture);
+    // Step 1: Navigate to each route extracted from criteria
+    const routes = extractTestRoutes(appUrl, ctx.criteria);
+    let stepsUsed = 0;
 
-    // Step 2: Try to navigate through the app (click buttons, follow links)
-    // Look for navigation elements that match the criteria
-    let stepsUsed = 1;
-    if (stepsUsed < maxSteps) {
-      // Find clickable elements that might lead to testable flows
+    for (const route of routes) {
+      if (ctx.signal.aborted || stepsUsed >= maxSteps) {
+        break;
+      }
+      stepsUsed++;
+
+      const stepStart = Date.now();
+      const label = stepsUsed === 1 ? "main" : `route-${stepsUsed}-${new URL(route).pathname}`;
+      const cap = await capturePage(page, route, evidenceDir, label);
+      captures.push(cap);
+
+      // Per-step 60s hard timebox
+      if (Date.now() - stepStart > STEP_TIMEOUT) {
+        break;
+      }
+    }
+
+    // Step 2: If we have budget left, click interesting elements on the last captured page
+    if (stepsUsed < maxSteps && !ctx.signal.aborted) {
       const clickTargets = await page
         .evaluate(() => {
-          const targets: Array<{
-            selector: string;
-            text: string;
-          }> = [];
+          const targets: Array<{ text: string }> = [];
           const clickables = document.querySelectorAll("button, a[href], [role=button], [onclick]");
           for (const el of Array.from(clickables).slice(0, 30)) {
             const text = (el as HTMLElement).innerText?.trim() ?? "";
             if (text && text.length < 100 && !text.match(/^(close|cancel|dismiss|x)$/i)) {
-              // Build a selector for this element
-              const tag = el.tagName.toLowerCase();
-              targets.push({ selector: `${tag}`, text });
+              targets.push({ text });
             }
           }
           return targets;
         })
-        .catch(() => [] as Array<{ selector: string; text: string }>);
+        .catch(() => [] as Array<{ text: string }>);
 
-      // Click through up to maxSteps interesting targets
-      const sampled = clickTargets.slice(0, Math.min(sample, maxSteps - 1));
+      const sampled = clickTargets.slice(0, Math.min(sample, maxSteps - stepsUsed));
       for (const target of sampled) {
         if (ctx.signal.aborted) {
           break;
@@ -467,14 +529,12 @@ export async function runUxEvalStage(
         stepsUsed++;
 
         try {
-          // Try to click elements matching this text
           const locator = page.getByText(target.text, { exact: false }).first();
           const isVisible = await locator.isVisible().catch(() => false);
           if (isVisible) {
             await locator.click({ timeout: 5000 });
             await page.waitForTimeout(SETTLE_WAIT);
 
-            // Capture the new state
             const stepCapture = await capturePage(
               page,
               page.url(),
@@ -482,20 +542,9 @@ export async function runUxEvalStage(
               `step-${stepsUsed}-${target.text.slice(0, 20)}`,
             );
             captures.push(stepCapture);
-
-            // Go back if we navigated away
-            if (page.url() !== appUrl) {
-              await page
-                .goto(appUrl, {
-                  waitUntil: "domcontentloaded",
-                  timeout: 10_000,
-                })
-                .catch(() => {});
-              await page.waitForTimeout(SETTLE_WAIT);
-            }
           }
         } catch {
-          // Click failed, continue to next target
+          // Click failed, continue
         }
       }
     }
@@ -507,6 +556,7 @@ export async function runUxEvalStage(
     const evalPrompt = buildEvalPrompt(ctx.criteria, evidence, sample);
 
     // Quick programmatic pre-check — find obvious failures
+    const noAuth = impliesNoAuth(ctx.criteria);
     const preFindings: UxFinding[] = [];
     for (const cap of captures) {
       if (cap.stuckOnLoading) {
@@ -519,6 +569,14 @@ export async function runUxEvalStage(
         preFindings.push({
           severity: "critical",
           description: `${cap.url} rendered a blank page`,
+        });
+      }
+      if (cap.hasLoginGate) {
+        preFindings.push({
+          severity: noAuth ? "critical" : "major",
+          description: noAuth
+            ? `${cap.url} shows login page but criteria expect public/no-auth access`
+            : `${cap.url} login gate blocks UX eval — cannot test app behind auth`,
         });
       }
       if (cap.loadTimeMs > 10_000 && !cap.stuckOnLoading) {

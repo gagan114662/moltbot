@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { formatUxReport, parseUxEvalOutput } from "./stages-ux-eval.js";
+import { extractTestRoutes, formatUxReport, parseUxEvalOutput } from "./stages-ux-eval.js";
 
 describe("parseUxEvalOutput", () => {
   it("parses structured output with verdict, findings, and summary", () => {
@@ -80,6 +80,43 @@ describe("parseUxEvalOutput", () => {
     expect(result.verdict).toBe("pass");
     expect(result.findings).toHaveLength(1);
     expect(result.findings[0].severity).toBe("critical");
+  });
+});
+
+describe("extractTestRoutes", () => {
+  it("always includes the base URL", () => {
+    const routes = extractTestRoutes("http://localhost:3000", "test the app");
+    expect(routes).toEqual(["http://localhost:3000"]);
+  });
+
+  it("extracts bare paths from criteria", () => {
+    const routes = extractTestRoutes("http://localhost:3000", "check if /app and /dashboard work");
+    expect(routes).toContain("http://localhost:3000/app");
+    expect(routes).toContain("http://localhost:3000/dashboard");
+  });
+
+  it("normalizes full URLs to the base host/port", () => {
+    const routes = extractTestRoutes(
+      "http://localhost:3000",
+      "test http://localhost:5173/app and http://example.com/foo",
+    );
+    // Both should be rewritten to localhost:3000
+    expect(routes).toContain("http://localhost:3000/app");
+    expect(routes).toContain("http://localhost:3000/foo");
+  });
+
+  it("deduplicates routes", () => {
+    const routes = extractTestRoutes(
+      "http://localhost:3000",
+      "test /app and http://localhost:3000/app",
+    );
+    const appCount = routes.filter((r) => r === "http://localhost:3000/app").length;
+    expect(appCount).toBe(1);
+  });
+
+  it("handles criteria with no routes", () => {
+    const routes = extractTestRoutes("http://localhost:3000", "check the tutor works");
+    expect(routes).toEqual(["http://localhost:3000"]);
   });
 });
 

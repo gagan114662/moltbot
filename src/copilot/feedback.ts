@@ -99,6 +99,63 @@ export function isPidAlive(pid: number): boolean {
   }
 }
 
+/** Write feedback to both moltbot's workspace and the target project workspace */
+export async function writeFeedbackToTarget(
+  moltbotCwd: string,
+  targetCwd: string | undefined,
+  feedback: CopilotFeedback,
+): Promise<void> {
+  await writeFeedback(moltbotCwd, feedback);
+  if (targetCwd && targetCwd !== moltbotCwd) {
+    await writeFeedback(targetCwd, feedback);
+  }
+  // Always write QA-FEEDBACK.md to target workspace (even if same as moltbot cwd)
+  if (targetCwd) {
+    await writeQaFeedbackMd(targetCwd, feedback);
+  }
+}
+
+/** Build human-readable QA feedback markdown */
+export function buildQaFeedbackMd(feedback: CopilotFeedback): string {
+  const lines: string[] = [
+    "# QA Feedback from Moltbot",
+    "",
+    `> Auto-generated: ${feedback.timestamp} | Stale after 5 min`,
+    "",
+  ];
+
+  if (feedback.ok) {
+    lines.push("## VERDICT: PASS", "", `All ${feedback.checks.length} checks passed.`);
+  } else {
+    const failed = feedback.checks.filter((c) => !c.passed);
+    lines.push(`## VERDICT: FAIL (${failed.length} check${failed.length !== 1 ? "s" : ""} failed)`);
+    lines.push("");
+
+    for (const check of failed) {
+      lines.push(`### ${check.stage} FAILED`);
+      if (check.error) {
+        lines.push("", check.error);
+      }
+      lines.push("");
+    }
+  }
+
+  lines.push(`## Summary`, "", feedback.summary);
+  return lines.join("\n");
+}
+
+/** Write QA-FEEDBACK.md to a workspace root (atomic) */
+export async function writeQaFeedbackMd(
+  targetCwd: string,
+  feedback: CopilotFeedback,
+): Promise<void> {
+  const md = buildQaFeedbackMd(feedback);
+  const target = path.join(targetCwd, "QA-FEEDBACK.md");
+  const tmp = `${target}.tmp`;
+  await fsp.writeFile(tmp, md, "utf-8");
+  await fsp.rename(tmp, target);
+}
+
 /** Truncate error output to MAX_ERROR_LENGTH */
 export function truncateError(error: string): string {
   if (error.length <= MAX_ERROR_LENGTH) {
