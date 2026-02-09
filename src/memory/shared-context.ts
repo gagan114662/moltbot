@@ -27,11 +27,17 @@ export function resolveSharedDir(memoryDir: string): string {
  */
 export function readSharedLearned(memoryDir: string, limit?: number): string {
   const filePath = path.join(memoryDir, SHARED_DIR_NAME, SHARED_LEARNED_FILE);
-  if (!fs.existsSync(filePath)) return "";
+  if (!fs.existsSync(filePath)) {
+    return "";
+  }
   const content = fs.readFileSync(filePath, "utf-8");
-  if (!limit) return content;
+  if (!limit) {
+    return content;
+  }
   const lines = content.split("\n");
-  if (lines.length <= limit) return content;
+  if (lines.length <= limit) {
+    return content;
+  }
   return lines.slice(-limit).join("\n");
 }
 
@@ -40,10 +46,14 @@ export function readSharedLearned(memoryDir: string, limit?: number): string {
  */
 export function readDiscoveries(memoryDir: string, limit = 10): string {
   const filePath = path.join(memoryDir, SHARED_DIR_NAME, DISCOVERIES_FILE);
-  if (!fs.existsSync(filePath)) return "";
+  if (!fs.existsSync(filePath)) {
+    return "";
+  }
   const content = fs.readFileSync(filePath, "utf-8");
   const lines = content.split("\n").filter((l) => l.startsWith("- ["));
-  if (lines.length <= limit) return lines.join("\n");
+  if (lines.length <= limit) {
+    return lines.join("\n");
+  }
   return lines.slice(-limit).join("\n");
 }
 
@@ -101,7 +111,9 @@ export function appendSharedRule(memoryDir: string, rule: string): boolean {
     );
     const intersection = [...ruleWords].filter((w) => lineWords.has(w)).length;
     const jaccard = intersection / Math.max(ruleWords.size, 1);
-    if (jaccard > 0.7) return false; // duplicate
+    if (jaccard > 0.7) {
+      return false;
+    } // duplicate
   }
 
   fs.appendFileSync(filePath, `${rule}\n`, "utf-8");
@@ -114,13 +126,17 @@ export function appendSharedRule(memoryDir: string, rule: string): boolean {
  */
 export function rotateDiscoveriesIfNeeded(memoryDir: string): boolean {
   const filePath = path.join(memoryDir, SHARED_DIR_NAME, DISCOVERIES_FILE);
-  if (!fs.existsSync(filePath)) return false;
+  if (!fs.existsSync(filePath)) {
+    return false;
+  }
 
   const content = fs.readFileSync(filePath, "utf-8");
   const allLines = content.split("\n");
   const entryLines = allLines.filter((l) => l.startsWith("- ["));
 
-  if (entryLines.length <= MAX_DISCOVERIES_LINES) return false;
+  if (entryLines.length <= MAX_DISCOVERIES_LINES) {
+    return false;
+  }
 
   // Keep the last MAX_DISCOVERIES_LINES/2 entries, archive the rest
   const keepCount = Math.floor(MAX_DISCOVERIES_LINES / 2);

@@ -40,7 +40,9 @@ export function resolveSessionsDirs(): string[] {
     return [envDir];
   }
   const baseDir = path.join(os.homedir(), ".openclaw", "agents");
-  if (!fs.existsSync(baseDir)) return [];
+  if (!fs.existsSync(baseDir)) {
+    return [];
+  }
   const dirs: string[] = [];
   try {
     for (const agent of fs.readdirSync(baseDir)) {
@@ -60,10 +62,14 @@ export function resolveSessionsDirs(): string[] {
  * file into memory. Extracts only what we need for the digest.
  */
 export function parseSessionLog(filePath: string): SessionSummary | null {
-  if (!fs.existsSync(filePath)) return null;
+  if (!fs.existsSync(filePath)) {
+    return null;
+  }
   const content = fs.readFileSync(filePath, "utf-8");
   const lines = content.split("\n").filter(Boolean);
-  if (lines.length === 0) return null;
+  if (lines.length === 0) {
+    return null;
+  }
 
   let id = "";
   let date = "";
@@ -120,7 +126,9 @@ export function parseSessionLog(filePath: string): SessionSummary | null {
     }
   }
 
-  if (!id && !date) return null;
+  if (!id && !date) {
+    return null;
+  }
 
   return {
     id,
@@ -142,7 +150,7 @@ function formatSessionSummary(s: SessionSummary): string {
   lines.push(`- Task: "${s.task}"`);
 
   if (s.toolCounts.size > 0) {
-    const sorted = [...s.toolCounts.entries()].sort((a, b) => b[1] - a[1]);
+    const sorted = [...s.toolCounts.entries()].toSorted((a, b) => b[1] - a[1]);
     const tools = sorted.map(([name, count]) => `${name} (${count})`).join(", ");
     lines.push(`- Tools used: ${tools}`);
   }
@@ -165,7 +173,9 @@ function collectSessionFiles(sessionsDirs: string[], limit: number): string[] {
   for (const dir of sessionsDirs) {
     try {
       for (const name of fs.readdirSync(dir)) {
-        if (!name.endsWith(".jsonl")) continue;
+        if (!name.endsWith(".jsonl")) {
+          continue;
+        }
         const fullPath = path.join(dir, name);
         const stat = fs.statSync(fullPath);
         files.push({ path: fullPath, mtimeMs: stat.mtimeMs });
@@ -191,7 +201,9 @@ export function refreshSessionDigest(
 
   for (const file of files) {
     const summary = parseSessionLog(file);
-    if (summary) summaries.push(summary);
+    if (summary) {
+      summaries.push(summary);
+    }
   }
 
   const now = new Date().toISOString();

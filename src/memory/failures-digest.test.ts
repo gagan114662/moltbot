@@ -42,8 +42,8 @@ describe("parseFailuresJsonl", () => {
     fs.writeFileSync(file, content);
     const entries = parseFailuresJsonl(file);
     expect(entries).toHaveLength(2);
-    expect(entries[0]!.tool).toBe("Read");
-    expect(entries[1]!.tool).toBe("Bash");
+    expect(entries[0].tool).toBe("Read");
+    expect(entries[1].tool).toBe("Bash");
   });
 
   it("parses compact JSONL", () => {
@@ -134,7 +134,7 @@ describe("clusterFailures", () => {
       { timestamp: "2026-02-09T10:00:00Z", tool: "Read", error: "EISDIR", input: {} },
     ];
     const clusters = clusterFailures(entries);
-    expect(clusters[0]!.distinctDays).toBe(3);
+    expect(clusters[0].distinctDays).toBe(3);
   });
 
   it("sorts by count descending", () => {
@@ -145,8 +145,8 @@ describe("clusterFailures", () => {
       { timestamp: "2026-02-07T13:00:00Z", tool: "Bash", error: "exit 1", input: {} },
     ];
     const clusters = clusterFailures(entries);
-    expect(clusters[0]!.tool).toBe("Bash");
-    expect(clusters[0]!.count).toBe(3);
+    expect(clusters[0].tool).toBe("Bash");
+    expect(clusters[0].count).toBe(3);
   });
 });
 

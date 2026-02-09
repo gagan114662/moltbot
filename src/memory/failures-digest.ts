@@ -27,9 +27,13 @@ export type FailureCluster = {
  * The file contains back-to-back JSON objects (not strict JSONL).
  */
 export function parseFailuresJsonl(filePath: string): FailureEntry[] {
-  if (!fs.existsSync(filePath)) return [];
+  if (!fs.existsSync(filePath)) {
+    return [];
+  }
   const raw = fs.readFileSync(filePath, "utf-8");
-  if (!raw.trim()) return [];
+  if (!raw.trim()) {
+    return [];
+  }
 
   const entries: FailureEntry[] = [];
   // Split on lines starting with '{' at column 0 to find object boundaries
@@ -70,7 +74,9 @@ export function parseFailuresJsonl(filePath: string): FailureEntry[] {
 export function normalizeError(error: string): string {
   let s = error;
   // Strip ANSI codes
-  s = s.replace(/\x1b\[[0-9;]*m/g, "");
+  // eslint-disable-next-line no-control-regex
+  const ANSI_RE = new RegExp("\\u001b\\[[0-9;]*m", "g");
+  s = s.replace(ANSI_RE, "");
   // Collapse absolute paths to <path>/basename
   s = s.replace(/\/[\w./ -]+\/([\w.-]+)/g, "<path>/$1");
   // Strip hex IDs
@@ -105,26 +111,26 @@ export function clusterFailures(entries: FailureEntry[]): FailureCluster[] {
 
   const clusters: FailureCluster[] = [];
   for (const [, { entries: clusterEntries, pattern }] of map) {
-    const sorted = clusterEntries.sort(
+    const sorted = clusterEntries.toSorted(
       (a, b) => new Date(a.timestamp).getTime() - new Date(b.timestamp).getTime(),
     );
     const days = new Set(sorted.map((e) => e.timestamp.slice(0, 10)));
     clusters.push({
-      tool: sorted[0]!.tool,
+      tool: sorted[0].tool,
       pattern,
       count: sorted.length,
       recent: sorted
         .slice(-3)
         .map((e) => e.error.slice(0, 200))
-        .reverse(),
-      firstSeen: sorted[0]!.timestamp,
-      lastSeen: sorted[sorted.length - 1]!.timestamp,
+        .toReversed(),
+      firstSeen: sorted[0].timestamp,
+      lastSeen: sorted[sorted.length - 1].timestamp,
       distinctDays: days.size,
     });
   }
 
   // Sort by count descending
-  return clusters.sort((a, b) => b.count - a.count);
+  return clusters.toSorted((a, b) => b.count - a.count);
 }
 
 /**
@@ -150,7 +156,7 @@ export function generateDigest(clusters: FailureCluster[], totalEntries: number)
   // Sort tools by total failure count
   const toolTotals = [...byTool.entries()]
     .map(([tool, cs]) => ({ tool, total: cs.reduce((sum, c) => sum + c.count, 0), clusters: cs }))
-    .sort((a, b) => b.total - a.total);
+    .toSorted((a, b) => b.total - a.total);
 
   for (const { tool, total, clusters: toolClusters } of toolTotals) {
     lines.push(`## ${tool} (${total} failures)`);
@@ -174,7 +180,9 @@ export function writeDigestIfChanged(digestPath: string, content: string): boole
   if (fs.existsSync(digestPath)) {
     const existing = fs.readFileSync(digestPath, "utf-8");
     const oldHash = crypto.createHash("sha256").update(existing).digest("hex");
-    if (newHash === oldHash) return false;
+    if (newHash === oldHash) {
+      return false;
+    }
   }
   fs.writeFileSync(digestPath, content, "utf-8");
   return true;

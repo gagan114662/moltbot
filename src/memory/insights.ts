@@ -68,7 +68,7 @@ function computeTopTasks(sessions: SessionSummary[], limit: number): InsightsRep
       toolTotal: [...s.toolCounts.values()].reduce((a, b) => a + b, 0),
       date: s.date,
     }))
-    .sort((a, b) => b.toolTotal - a.toolTotal)
+    .toSorted((a, b) => b.toolTotal - a.toolTotal)
     .slice(0, limit);
 }
 
@@ -81,7 +81,7 @@ function computeTimeSinks(sessions: SessionSummary[]): InsightsReport["timeSinks
   }
   return [...totals.entries()]
     .map(([tool, total]) => ({ tool, total }))
-    .sort((a, b) => b.total - a.total)
+    .toSorted((a, b) => b.total - a.total)
     .slice(0, 10);
 }
 
