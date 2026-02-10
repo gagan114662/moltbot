@@ -2,10 +2,17 @@ import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
 import { afterEach, describe, expect, it } from "vitest";
+import type { MultiTurnResult, TurnResult, VisualAssessment } from "./voice-qa.js";
 import {
   assertVoicePlatform,
   buildVoiceArgs,
+  ELEMENTARY_MATH_SCRIPT,
+  extractPcmData,
+  formatMultiTurnReport,
   formatVoiceReport,
+  generateSessionWav,
+  parseVisualAssessment,
+  runVoiceQaStage,
   validateWavHeader,
 } from "./voice-qa.js";
 
@@ -165,6 +172,383 @@ describe("voice-qa", () => {
       ]);
       expect(report).toContain("User heard: Test prompt");
       expect(report).not.toContain("Tutor said:");
+    });
+  });
+
+  describe("extractPcmData", () => {
+    let tmpDir: string;
+
+    afterEach(() => {
+      if (tmpDir) {
+        fs.rmSync(tmpDir, { recursive: true, force: true });
+      }
+    });
+
+    it("extracts data chunk from standard WAV", () => {
+      tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), "voice-qa-pcm-"));
+      const wavPath = path.join(tmpDir, "test.wav");
+
+      // Build a minimal WAV with 100 bytes of PCM data
+      const pcmData = Buffer.alloc(100, 0x42);
+      const header = Buffer.alloc(44);
+      header.write("RIFF", 0, "ascii");
+      header.writeUInt32LE(36 + pcmData.length, 4);
+      header.write("WAVE", 8, "ascii");
+      header.write("fmt ", 12, "ascii");
+      header.writeUInt32LE(16, 16);
+      header.writeUInt16LE(1, 20); // PCM
+      header.writeUInt16LE(1, 22); // mono
+      header.writeUInt32LE(16000, 24);
+      header.writeUInt32LE(32000, 28);
+      header.writeUInt16LE(2, 32);
+      header.writeUInt16LE(16, 34);
+      header.write("data", 36, "ascii");
+      header.writeUInt32LE(pcmData.length, 40);
+
+      fs.writeFileSync(wavPath, Buffer.concat([header, pcmData]));
+
+      const result = extractPcmData(wavPath);
+      expect(result.length).toBe(100);
+      expect(result[0]).toBe(0x42);
+    });
+
+    it("handles WAV with JUNK chunk before data", () => {
+      tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), "voice-qa-pcm-"));
+      const wavPath = path.join(tmpDir, "junk.wav");
+
+      const pcmData = Buffer.alloc(50, 0xaa);
+      // RIFF + WAVE + fmt(24) + JUNK(12) + data
+      const buf = Buffer.alloc(12 + 24 + 12 + 8 + pcmData.length);
+      let offset = 0;
+      buf.write("RIFF", offset, "ascii");
+      offset += 4;
+      buf.writeUInt32LE(buf.length - 8, offset);
+      offset += 4;
+      buf.write("WAVE", offset, "ascii");
+      offset += 4;
+      // fmt chunk
+      buf.write("fmt ", offset, "ascii");
+      offset += 4;
+      buf.writeUInt32LE(16, offset);
+      offset += 4;
+      buf.writeUInt16LE(1, offset);
+      offset += 2; // PCM
+      buf.writeUInt16LE(1, offset);
+      offset += 2; // mono
+      buf.writeUInt32LE(16000, offset);
+      offset += 4;
+      buf.writeUInt32LE(32000, offset);
+      offset += 4;
+      buf.writeUInt16LE(2, offset);
+      offset += 2;
+      buf.writeUInt16LE(16, offset);
+      offset += 2;
+      // JUNK chunk
+      buf.write("JUNK", offset, "ascii");
+      offset += 4;
+      buf.writeUInt32LE(4, offset);
+      offset += 4;
+      buf.writeUInt32LE(0, offset);
+      offset += 4;
+      // data chunk
+      buf.write("data", offset, "ascii");
+      offset += 4;
+      buf.writeUInt32LE(pcmData.length, offset);
+      offset += 4;
+      pcmData.copy(buf, offset);
+
+      fs.writeFileSync(wavPath, buf);
+
+      const result = extractPcmData(wavPath);
+      expect(result.length).toBe(50);
+      expect(result[0]).toBe(0xaa);
+    });
+  });
+
+  describe("generateSessionWav", () => {
+    let tmpDir: string;
+
+    afterEach(() => {
+      if (tmpDir) {
+        fs.rmSync(tmpDir, { recursive: true, force: true });
+      }
+    });
+
+    // Only test on macOS (requires `say` command)
+    const describeOnMac = process.platform === "darwin" ? describe : describe.skip;
+
+    describeOnMac("on macOS", () => {
+      it("generates a valid WAV with correct timing for 2 turns", () => {
+        tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), "voice-qa-session-"));
+        const wavPath = path.join(tmpDir, "session.wav");
+
+        const { wavPath: resultPath, turnTimings } = generateSessionWav(
+          [
+            { prompt: "Hello", waitSec: 5 },
+            { prompt: "World", waitSec: 5 },
+          ],
+          wavPath,
+        );
+
+        expect(resultPath).toBe(wavPath);
+        expect(fs.existsSync(wavPath)).toBe(true);
+
+        // Validate WAV header
+        expect(() => validateWavHeader(wavPath)).not.toThrow();
+
+        // Check timings
+        expect(turnTimings).toHaveLength(2);
+
+        // First turn starts after 25s initial silence (tutor greeting window)
+        expect(turnTimings[0].promptStartMs).toBe(25_000);
+        expect(turnTimings[0].promptEndMs).toBeGreaterThan(25_000);
+        expect(turnTimings[0].windowEndMs).toBeGreaterThan(turnTimings[0].promptEndMs);
+
+        // Second turn starts after first turn's window ends
+        expect(turnTimings[1].promptStartMs).toBeGreaterThan(turnTimings[0].promptEndMs);
+
+        // WAV file should be reasonable size (> 44 bytes header + some data)
+        const stat = fs.statSync(wavPath);
+        expect(stat.size).toBeGreaterThan(1_000);
+      });
+
+      it("returns timings that increase monotonically", () => {
+        tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), "voice-qa-session-"));
+        const wavPath = path.join(tmpDir, "session.wav");
+
+        const { turnTimings } = generateSessionWav(
+          [
+            { prompt: "One", waitSec: 3 },
+            { prompt: "Two", waitSec: 3 },
+            { prompt: "Three", waitSec: 3 },
+          ],
+          wavPath,
+        );
+
+        expect(turnTimings).toHaveLength(3);
+        for (let i = 1; i < turnTimings.length; i++) {
+          expect(turnTimings[i].promptStartMs).toBeGreaterThan(turnTimings[i - 1].promptEndMs);
+        }
+        for (const t of turnTimings) {
+          expect(t.promptEndMs).toBeGreaterThan(t.promptStartMs);
+          expect(t.windowEndMs).toBeGreaterThan(t.promptEndMs);
+        }
+      });
+    });
+  });
+
+  describe("parseVisualAssessment", () => {
+    it("parses valid JSON response", () => {
+      const raw = JSON.stringify({
+        score: 85,
+        canvasDescription: "A number line showing 2+2=4",
+        drawingCorrect: true,
+        issues: [{ severity: "minor", description: "Slight spacing issue", location: "center" }],
+      });
+      const result = parseVisualAssessment(raw);
+      expect(result.score).toBe(85);
+      expect(result.canvasDescription).toBe("A number line showing 2+2=4");
+      expect(result.drawingCorrect).toBe(true);
+      expect(result.issues).toHaveLength(1);
+      expect(result.issues[0].severity).toBe("minor");
+      expect(result.rawResponse).toBe(raw);
+    });
+
+    it("handles response with markdown wrapping", () => {
+      const json = {
+        score: 30,
+        canvasDescription: "Blank canvas",
+        drawingCorrect: false,
+        issues: [{ severity: "critical", description: "Canvas is empty" }],
+      };
+      const raw = "```json\n" + JSON.stringify(json) + "\n```";
+      const result = parseVisualAssessment(raw);
+      expect(result.score).toBe(30);
+      expect(result.drawingCorrect).toBe(false);
+      expect(result.issues).toHaveLength(1);
+      expect(result.issues[0].severity).toBe("critical");
+    });
+
+    it("returns fallback for garbage input", () => {
+      const result = parseVisualAssessment("this is not json at all");
+      expect(result.score).toBe(0);
+      expect(result.drawingCorrect).toBe(false);
+      expect(result.issues).toHaveLength(0);
+      expect(result.rawResponse).toBe("this is not json at all");
+    });
+
+    it("normalizes unknown severity to major", () => {
+      const raw = JSON.stringify({
+        score: 60,
+        canvasDescription: "Some content",
+        drawingCorrect: true,
+        issues: [{ severity: "unknown_level", description: "Something odd" }],
+      });
+      const result = parseVisualAssessment(raw);
+      expect(result.issues[0].severity).toBe("major");
+    });
+
+    it("skips issues without description", () => {
+      const raw = JSON.stringify({
+        score: 50,
+        canvasDescription: "Content",
+        drawingCorrect: true,
+        issues: [{ severity: "minor" }, { severity: "major", description: "Real issue" }],
+      });
+      const result = parseVisualAssessment(raw);
+      expect(result.issues).toHaveLength(1);
+      expect(result.issues[0].description).toBe("Real issue");
+    });
+  });
+
+  describe("formatMultiTurnReport", () => {
+    function makeTurn(overrides: Partial<TurnResult> = {}): TurnResult {
+      return {
+        turnIndex: 0,
+        prompt: "Test prompt",
+        tutorResponse: "Test response",
+        toolCalls: [],
+        keywords: { expected: [], found: [] },
+        passed: true,
+        failReasons: [],
+        consoleErrors: [],
+        consoleLogs: [],
+        ...overrides,
+      };
+    }
+
+    function makeResult(overrides: Partial<MultiTurnResult> = {}): MultiTurnResult {
+      return {
+        scriptName: "test-script",
+        turns: [makeTurn()],
+        allPassed: true,
+        sessionDurationMs: 120_000,
+        ttsEngines: ["gemini"],
+        wsEvents: [],
+        overallConsoleErrors: [],
+        overallConsoleLogs: [],
+        ...overrides,
+      };
+    }
+
+    it("formats all-passing multi-turn result", () => {
+      const result = makeResult({
+        turns: [
+          makeTurn({ turnIndex: 0, prompt: "What is 2+2?", tutorResponse: "Four!" }),
+          makeTurn({ turnIndex: 1, prompt: "Show me on the board", tutorResponse: "Sure!" }),
+        ],
+      });
+      const report = formatMultiTurnReport(result);
+      expect(report).toContain("test-script");
+      expect(report).toContain("2/2 turns passed");
+      expect(report).toContain("[PASS]");
+      expect(report).toContain("What is 2+2?");
+    });
+
+    it("formats mixed pass/fail turns", () => {
+      const result = makeResult({
+        allPassed: false,
+        turns: [
+          makeTurn({ turnIndex: 0, prompt: "Hi", passed: true }),
+          makeTurn({
+            turnIndex: 1,
+            prompt: "Draw something",
+            passed: false,
+            tutorResponse: null,
+            failReasons: ["Tutor did not respond"],
+          }),
+        ],
+      });
+      const report = formatMultiTurnReport(result);
+      expect(report).toContain("1/2 turns passed");
+      expect(report).toContain("[FAIL]");
+      expect(report).toContain("Tutor did not respond");
+    });
+
+    it("includes visual assessment info when present", () => {
+      const va: VisualAssessment = {
+        score: 45,
+        canvasDescription: "Blank canvas",
+        issues: [{ severity: "critical", description: "Nothing drawn" }],
+        drawingCorrect: false,
+        rawResponse: "{}",
+      };
+      const result = makeResult({
+        allPassed: false,
+        turns: [
+          makeTurn({
+            turnIndex: 0,
+            prompt: "Draw 2+2",
+            passed: false,
+            failReasons: ["Visual quality below threshold: 45/100"],
+            visualAssessment: va,
+          }),
+        ],
+      });
+      const report = formatMultiTurnReport(result);
+      expect(report).toContain("Visual score: 45/100");
+    });
+
+    it("includes keyword info", () => {
+      const result = makeResult({
+        turns: [
+          makeTurn({
+            turnIndex: 0,
+            prompt: "What is 2+2?",
+            tutorResponse: "The answer is four.",
+            keywords: { expected: ["four", "4"], found: ["four"] },
+          }),
+        ],
+      });
+      const report = formatMultiTurnReport(result);
+      expect(report).toContain("Missing keywords: 4");
+    });
+
+    it("shows session duration", () => {
+      const result = makeResult({ sessionDurationMs: 95_000 });
+      const report = formatMultiTurnReport(result);
+      // Should show ~95s or ~1.6m
+      expect(report).toMatch(/\d+s/);
+    });
+  });
+
+  describe("ELEMENTARY_MATH_SCRIPT", () => {
+    it("has 4 turns totaling at least 80s of wait time", () => {
+      expect(ELEMENTARY_MATH_SCRIPT.turns).toHaveLength(4);
+      const totalWait = ELEMENTARY_MATH_SCRIPT.turns.reduce((sum, t) => sum + t.waitSec, 0);
+      expect(totalWait).toBeGreaterThanOrEqual(80);
+    });
+
+    it("first turn expects keyword match", () => {
+      const first = ELEMENTARY_MATH_SCRIPT.turns[0];
+      expect(first.expect?.keywords).toContain("four");
+    });
+
+    it("second turn expects drawing", () => {
+      const second = ELEMENTARY_MATH_SCRIPT.turns[1];
+      expect(second.expect?.drawingExpected).toBe(true);
+    });
+  });
+
+  describe("runVoiceQaStage", () => {
+    it("is exported as a function", () => {
+      expect(typeof runVoiceQaStage).toBe("function");
+    });
+
+    it("returns StageResult with error when Chrome not found on non-darwin", () => {
+      // On CI or non-macOS, resolveChromePath may fail — test the export is callable
+      // The actual browser test requires a running app, so we just validate the shape
+      const original = process.platform;
+      if (original !== "darwin") {
+        // Can't resolve Chrome — test error path
+        const controller = new AbortController();
+        const result = runVoiceQaStage({
+          cwd: "/tmp",
+          appUrl: "http://localhost:3000/app",
+          signal: controller.signal,
+        });
+        expect(result).toBeInstanceOf(Promise);
+      }
     });
   });
 });

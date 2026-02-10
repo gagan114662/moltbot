@@ -139,6 +139,19 @@ export function buildQaFeedbackMd(feedback: CopilotFeedback): string {
     lines.push(`## VERDICT: FAIL (${failed.length} check${failed.length !== 1 ? "s" : ""} failed)`);
     lines.push("");
 
+    // Put diagnosis FIRST — it has the root cause and specific fix with file:line
+    // The summary contains the diagnosis section appended after "---"
+    const diagIdx = feedback.summary.indexOf("---\n\n# Diagnosis");
+    if (diagIdx >= 0) {
+      const diagSection = feedback.summary.slice(diagIdx + 4); // skip "---\n"
+      lines.push(diagSection);
+      lines.push("");
+      lines.push("---");
+      lines.push("");
+    }
+
+    lines.push("## Detailed Failures");
+    lines.push("");
     for (const check of failed) {
       lines.push(`### ${check.stage} FAILED`);
       if (check.error) {
@@ -146,9 +159,26 @@ export function buildQaFeedbackMd(feedback: CopilotFeedback): string {
       }
       lines.push("");
     }
+
+    lines.push("## Action Required");
+    lines.push("");
+    lines.push("**You MUST fix the issues above.** Steps:");
+    lines.push(
+      "1. Read the Diagnosis section — it tells you the root cause and exact fix with file:line",
+    );
+    lines.push("2. Open the referenced files and apply the suggested changes");
+    lines.push("3. Save and let the dev server hot-reload");
+    lines.push("4. Say 'done' when fixed so voice QA can re-test");
   }
 
-  lines.push(`## Summary`, "", feedback.summary);
+  // Include the raw report for reference
+  const reportOnly = feedback.summary.includes("---\n\n# Diagnosis")
+    ? feedback.summary.slice(0, feedback.summary.indexOf("---\n\n# Diagnosis"))
+    : feedback.summary;
+  if (reportOnly.trim()) {
+    lines.push("", "---", "", "## Raw Report", "", reportOnly.trim());
+  }
+
   return lines.join("\n");
 }
 

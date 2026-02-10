@@ -6,6 +6,7 @@
 
 import type { ProjectToolchain } from "./toolchain.js";
 import type { StageResult, VideoResult } from "./types.js";
+import type { StudentScript } from "./voice-qa.js";
 
 export type WorkerConfig = {
   /** The task description */
@@ -60,6 +61,10 @@ export type WorkerConfig = {
   toolchain?: ProjectToolchain;
   /** Custom event emitter (overrides dashboard/json emitters) */
   emit?: (event: WorkerEvent) => void;
+  /** Skip voice QA stage */
+  noVoiceQa?: boolean;
+  /** Voice QA student script (defaults to ELEMENTARY_MATH_SCRIPT) */
+  voiceQaScript?: StudentScript;
 };
 
 export type IterationResult = {

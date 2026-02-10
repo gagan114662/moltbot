@@ -25,6 +25,7 @@ import { runUxEvalStage } from "./stages-ux-eval.js";
 import { runLintStage, runTypecheckStage, runTestStage } from "./stages.js";
 import { detectToolchain } from "./toolchain.js";
 import { runVideoVerification } from "./video-verify.js";
+import { runVoiceQaStage } from "./voice-qa.js";
 import { createWorkerDashboard } from "./worker-dashboard.js";
 
 /** Check if git working tree is clean, auto-stash if dirty */
@@ -259,6 +260,19 @@ async function runVerification(
     checks.push(browserResult);
     emit({ type: "stage-done", result: browserResult });
     screenshotPath = inspect?.screenshotPath;
+  }
+
+  // Voice QA (only if browser passed and not skipped)
+  if (!config.noVoiceQa && codeChecksPassed) {
+    emit({ type: "stage-start", stage: "voice-qa" });
+    const voiceQa = await runVoiceQaStage({
+      cwd: config.cwd,
+      appUrl: config.appUrl ?? "http://localhost:3000/app",
+      script: config.voiceQaScript,
+      signal,
+    });
+    checks.push(voiceQa);
+    emit({ type: "stage-done", result: voiceQa });
   }
 
   // Screenshot-diff (only if browser passed and screenshot exists)
