@@ -13,7 +13,6 @@ import { getApiKeyForModel, requireApiKey, resolveEnvApiKey } from "../model-aut
 import { runWithImageModelFallback } from "../model-fallback.js";
 import { resolveConfiguredModelRef } from "../model-selection.js";
 import { ensureOpenClawModelsJson } from "../models-config.js";
-import { discoverAuthStorage, discoverModels } from "../pi-model-discovery.js";
 import { assertSandboxPath } from "../sandbox-paths.js";
 import {
   coerceImageAssistantText,
@@ -242,6 +241,7 @@ async function runImagePrompt(params: {
     : undefined;
 
   await ensureOpenClawModelsJson(effectiveCfg, params.agentDir);
+  const { discoverAuthStorage, discoverModels } = await import("../pi-model-discovery.js");
   const authStorage = discoverAuthStorage(params.agentDir);
   const modelRegistry = discoverModels(authStorage, params.agentDir);
 

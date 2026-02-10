@@ -23,6 +23,14 @@ for (let i = 0; i < 10 && candidates.length === 0; i++) {
   candidates = findCandidates();
 }
 
+// In unbundle mode (rolldown#8184 workaround), daemon-cli lives at dist/cli/daemon-cli.js
+// instead of dist/daemon-cli-<hash>.js.  Check for it before throwing.
+const unbundledPath = path.join(cliDir, "daemon-cli.js");
+if (candidates.length === 0 && fs.existsSync(unbundledPath)) {
+  // Unbundle mode: daemon-cli.js is already in the right place.
+  process.exit(0);
+}
+
 if (candidates.length === 0) {
   throw new Error("No daemon-cli bundle found in dist; cannot write legacy CLI shim.");
 }

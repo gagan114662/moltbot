@@ -50,6 +50,8 @@ export type WorkerConfig = {
   stallLimit: number;
   /** Target project workspace for cross-project feedback delivery */
   targetWorkspace?: string;
+  /** Tmux pane target for nudging the Claude Code session (e.g. "scratchpad:0.0") */
+  tmuxTarget?: string;
   /** Skip installing hooks in target project */
   noBootstrapHooks: boolean;
   /** Run browser in headed mode (visible window) */

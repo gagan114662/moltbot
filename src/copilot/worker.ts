@@ -492,16 +492,21 @@ export async function runWorker(inputConfig: WorkerConfig): Promise<WorkerResult
         }
 
         // Write feedback to both moltbot + target workspace
-        await writeFeedbackToTarget(config.cwd, config.targetWorkspace, {
-          timestamp: new Date().toISOString(),
-          ok: true,
-          durationMs: Date.now() - startTime,
-          gitRef: getHeadRef(config.cwd),
-          triggerFiles: changedFiles,
-          checks: verify.checks,
-          video,
-          summary: buildSummary(verify.checks, Date.now() - startTime),
-        });
+        await writeFeedbackToTarget(
+          config.cwd,
+          config.targetWorkspace,
+          {
+            timestamp: new Date().toISOString(),
+            ok: true,
+            durationMs: Date.now() - startTime,
+            gitRef: getHeadRef(config.cwd),
+            triggerFiles: changedFiles,
+            checks: verify.checks,
+            video,
+            summary: buildSummary(verify.checks, Date.now() - startTime),
+          },
+          config.tmuxTarget,
+        );
 
         const result: WorkerResult = {
           ok: true,
@@ -533,15 +538,20 @@ export async function runWorker(inputConfig: WorkerConfig): Promise<WorkerResult
 
       if (consecutiveStalls >= config.stallLimit) {
         // Write failure feedback to both workspaces
-        await writeFeedbackToTarget(config.cwd, config.targetWorkspace, {
-          timestamp: new Date().toISOString(),
-          ok: false,
-          durationMs: Date.now() - startTime,
-          gitRef: getHeadRef(config.cwd),
-          triggerFiles: changedFiles,
-          checks: verify.checks,
-          summary: buildSummary(verify.checks, Date.now() - startTime),
-        });
+        await writeFeedbackToTarget(
+          config.cwd,
+          config.targetWorkspace,
+          {
+            timestamp: new Date().toISOString(),
+            ok: false,
+            durationMs: Date.now() - startTime,
+            gitRef: getHeadRef(config.cwd),
+            triggerFiles: changedFiles,
+            checks: verify.checks,
+            summary: buildSummary(verify.checks, Date.now() - startTime),
+          },
+          config.tmuxTarget,
+        );
 
         const result: WorkerResult = {
           ok: false,
@@ -558,15 +568,20 @@ export async function runWorker(inputConfig: WorkerConfig): Promise<WorkerResult
 
     // Max iterations exhausted
     const lastChecks = iterations[iterations.length - 1]?.checks ?? [];
-    await writeFeedbackToTarget(config.cwd, config.targetWorkspace, {
-      timestamp: new Date().toISOString(),
-      ok: false,
-      durationMs: Date.now() - startTime,
-      gitRef: getHeadRef(config.cwd),
-      triggerFiles: allChangedFiles,
-      checks: lastChecks,
-      summary: buildSummary(lastChecks, Date.now() - startTime),
-    });
+    await writeFeedbackToTarget(
+      config.cwd,
+      config.targetWorkspace,
+      {
+        timestamp: new Date().toISOString(),
+        ok: false,
+        durationMs: Date.now() - startTime,
+        gitRef: getHeadRef(config.cwd),
+        triggerFiles: allChangedFiles,
+        checks: lastChecks,
+        summary: buildSummary(lastChecks, Date.now() - startTime),
+      },
+      config.tmuxTarget,
+    );
 
     const result: WorkerResult = {
       ok: false,

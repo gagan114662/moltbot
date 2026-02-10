@@ -9,6 +9,7 @@ import fs from "node:fs";
 import fsp from "node:fs/promises";
 import path from "node:path";
 import type { CopilotFeedback, StageResult } from "./types.js";
+import { tmuxSendKeys } from "./tmux-send.js";
 
 const FEEDBACK_DIR = ".moltbot";
 const FEEDBACK_FILE = "copilot-feedback.json";
@@ -99,11 +100,13 @@ export function isPidAlive(pid: number): boolean {
   }
 }
 
-/** Write feedback to both moltbot's workspace and the target project workspace */
+/** Write feedback to both moltbot's workspace and the target project workspace,
+ *  then nudge the scratchpad Claude Code session via tmux so it reads the results. */
 export async function writeFeedbackToTarget(
   moltbotCwd: string,
   targetCwd: string | undefined,
   feedback: CopilotFeedback,
+  tmuxTarget?: string,
 ): Promise<void> {
   await writeFeedback(moltbotCwd, feedback);
   if (targetCwd && targetCwd !== moltbotCwd) {
@@ -112,6 +115,11 @@ export async function writeFeedbackToTarget(
   // Always write QA-FEEDBACK.md to target workspace (even if same as moltbot cwd)
   if (targetCwd) {
     await writeQaFeedbackMd(targetCwd, feedback);
+  }
+  // Nudge the Claude Code session in tmux so it picks up the feedback
+  if (tmuxTarget) {
+    const verdict = feedback.ok ? "PASSED" : "FAILED";
+    tmuxSendKeys(tmuxTarget, `Voice QA ${verdict} -- read QA-FEEDBACK.md and act on the results`);
   }
 }
 

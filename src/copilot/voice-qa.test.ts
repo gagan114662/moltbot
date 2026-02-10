@@ -127,6 +127,7 @@ describe("voice-qa", () => {
           transcript: "What is 2+2?",
           tutorResponse: "Two plus two equals four.",
           consoleErrors: [],
+          consoleLogs: [],
           passed: true,
         },
       ]);
@@ -141,6 +142,7 @@ describe("voice-qa", () => {
         {
           prompt: "Hello tutor",
           consoleErrors: ["WebSocket error"],
+          consoleLogs: [],
           passed: false,
           error: "Timeout waiting for response",
         },
@@ -157,6 +159,7 @@ describe("voice-qa", () => {
           prompt: "Test prompt",
           transcript: "Test prompt",
           consoleErrors: [],
+          consoleLogs: [],
           passed: false,
         },
       ]);

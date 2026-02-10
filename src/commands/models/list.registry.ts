@@ -10,7 +10,6 @@ import {
   resolveEnvApiKey,
 } from "../../agents/model-auth.js";
 import { ensureOpenClawModelsJson } from "../../agents/models-config.js";
-import { discoverAuthStorage, discoverModels } from "../../agents/pi-model-discovery.js";
 import { modelKey } from "./shared.js";
 
 const isLocalBaseUrl = (baseUrl: string) => {
@@ -48,6 +47,8 @@ const hasAuthForProvider = (provider: string, cfg: OpenClawConfig, authStore: Au
 export async function loadModelRegistry(cfg: OpenClawConfig) {
   await ensureOpenClawModelsJson(cfg);
   const agentDir = resolveOpenClawAgentDir();
+  const { discoverAuthStorage, discoverModels } =
+    await import("../../agents/pi-model-discovery.js");
   const authStorage = discoverAuthStorage(agentDir);
   const registry = discoverModels(authStorage, agentDir);
   const models = registry.getAll();

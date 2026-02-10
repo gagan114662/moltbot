@@ -9,7 +9,7 @@ describe("parseQaFlags", () => {
     expect(result.sample).toBe(5);
     expect(result.url).toBeUndefined();
     expect(result.agentId).toBeUndefined();
-    expect(result.tmuxTarget).toBe("moltbot:0.0");
+    expect(result.tmuxTarget).toBe("scratchpad:0.0");
   });
 
   it("parses --steps flag", () => {
@@ -42,9 +42,9 @@ describe("parseQaFlags", () => {
     expect(result.criteria).toBe("test board");
   });
 
-  it("defaults tmux target to moltbot:0.0", () => {
+  it("defaults tmux target to scratchpad:0.0", () => {
     const result = parseQaFlags("test board");
-    expect(result.tmuxTarget).toBe("moltbot:0.0");
+    expect(result.tmuxTarget).toBe("scratchpad:0.0");
   });
 
   it("parses --voice flag", () => {

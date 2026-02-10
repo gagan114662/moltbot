@@ -11,9 +11,6 @@
  *   /qa agent=v4 <criteria>          — Use specific agent
  */
 
-import fs from "node:fs";
-import os from "node:os";
-import path from "node:path";
 import type { CopilotFeedback } from "../../copilot/types.js";
 import type { CommandHandler } from "./commands-types.js";
 import type { RouteReplyParams } from "./route-reply.js";
@@ -23,7 +20,7 @@ import { writeFeedbackToTarget } from "../../copilot/feedback.js";
 import { bootstrapQaHooks } from "../../copilot/qa-bootstrap.js";
 import { formatUxReport, runUxEvalStage } from "../../copilot/stages-ux-eval.js";
 import { DEFAULT_TMUX_TARGET, tmuxSendKeys } from "../../copilot/tmux-send.js";
-import { formatVoiceReport, runVoiceQa } from "../../copilot/voice-qa.js";
+import { runVoiceQaLoop } from "../../copilot/voice-qa-loop.js";
 import { logVerbose } from "../../globals.js";
 import { routeReply } from "./route-reply.js";
 
@@ -176,7 +173,7 @@ export const handleQaCommand: CommandHandler = async (params, allowTextCommands)
     mirror: false,
   });
 
-  // Voice QA path — separate from standard UX eval
+  // Voice QA path — feedback loop: test → nudge Claude → wait → retest
   if (flags.voice) {
     const chromePath = resolveChromePath();
     if (!chromePath) {
@@ -187,46 +184,35 @@ export const handleQaCommand: CommandHandler = async (params, allowTextCommands)
       return { shouldContinue: false };
     }
 
-    const evidenceDir = path.join(os.tmpdir(), `voice-qa-evidence-${Date.now()}`);
-    fs.mkdirSync(evidenceDir, { recursive: true });
+    // Bypass token from scratchpad AuthContext (test user — skips login + onboarding)
+    const SCRATCHPAD_BYPASS_TOKEN =
+      "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJzdWIiOiJtb25nb2RiX3Rlc3RfdXNlciIsImVtYWlsIjoidGVzdEBleGFtcGxlLmNvbSIsIm5hbWUiOiJUZXN0IFVzZXIiLCJpYXQiOjE3NzA1Nzg4NzcsImV4cCI6MTgwMjExNDg3N30.v98BjQxjtXe0iwGOqTq6BcwJJ-IH8mUvvMw_8Rx9QjA";
 
-    runVoiceQa({
+    runVoiceQaLoop({
       appUrl: flags.url ?? "http://localhost:3000/app",
       prompts: [flags.criteria],
       chromePath,
-      evidenceDir,
+      cwd,
+      targetCwd,
+      tmuxTarget: flags.tmuxTarget,
+      authToken: SCRATCHPAD_BYPASS_TOKEN,
+      onProgress: (msg) => {
+        void routeReply({ ...routeParams, payload: { text: msg }, mirror: false });
+      },
     })
-      .then(async (results) => {
-        const report = `Voice QA Report\n\n${formatVoiceReport(results)}`;
-        const allPassed = results.every((r) => r.passed);
-
-        const feedback: CopilotFeedback = {
-          timestamp: new Date().toISOString(),
-          ok: allPassed,
-          durationMs: 0,
-          gitRef: "voice-qa",
-          triggerFiles: [],
-          checks: results.map((r) => ({
-            stage: "voice-qa" as const,
-            passed: r.passed,
-            durationMs: 0,
-            error: r.error,
-          })),
-          summary: formatVoiceReport(results),
-        };
-        await writeFeedbackToTarget(cwd, targetCwd, feedback);
-
-        const nudge = allPassed
-          ? "Voice QA passed — tutor responded to all prompts."
-          : `Voice QA failed: ${feedback.summary.split("\n")[0]}. Read QA-FEEDBACK.md for details.`;
-        tmuxSendKeys(flags.tmuxTarget, nudge);
-
+      .then((loopResult) => {
+        const status = loopResult.ok ? "PASSED" : `FAILED (${loopResult.stopReason})`;
+        const report = [
+          `Voice QA ${status} after ${loopResult.iterations} iteration(s)`,
+          "",
+          loopResult.lastReport,
+        ].join("\n");
         void routeReply({ ...routeParams, payload: { text: report } });
       })
       .catch((err) => {
         void routeReply({
           ...routeParams,
-          payload: { text: `Voice QA failed: ${String(err)}` },
+          payload: { text: `Voice QA loop failed: ${String(err)}` },
         });
       });
 

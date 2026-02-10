@@ -106,6 +106,8 @@ export type VoiceQaResult = {
   tutorResponse?: string;
   screenshotPath?: string;
   consoleErrors: string[];
+  /** All console.log/warn/info for diagnostics */
+  consoleLogs: string[];
   passed: boolean;
   error?: string;
 };
@@ -116,6 +118,8 @@ export type VoiceQaParams = {
   chromePath: string;
   evidenceDir: string;
   timeoutMs?: number;
+  /** JWT token to inject into localStorage before navigating (bypasses login). */
+  authToken?: string;
 };
 
 // ---------------------------------------------------------------------------
@@ -199,12 +203,18 @@ export async function runVoiceQa(params: VoiceQaParams): Promise<VoiceQaResult[]
       });
 
       const consoleErrors: string[] = [];
+      const consoleLogs: string[] = [];
       try {
         const context = await browser.newContext({ permissions: ["microphone"] });
         const page = await context.newPage();
         page.on("console", (msg) => {
-          if (msg.type() === "error") {
-            const text = msg.text();
+          const text = msg.text();
+          const type = msg.type();
+          // Capture all logs for diagnostics
+          if (type === "log" || type === "warning" || type === "info") {
+            consoleLogs.push(`[${type}] ${text}`);
+          }
+          if (type === "error") {
             // Filter React dev warnings and resource loading failures
             if (text.includes("findDOMNode") || text.includes("net::ERR_CONNECTION_REFUSED")) {
               return;
@@ -212,14 +222,41 @@ export async function runVoiceQa(params: VoiceQaParams): Promise<VoiceQaResult[]
             consoleErrors.push(text);
           }
         });
+        page.on("pageerror", (err) => {
+          consoleErrors.push(`[PAGE_ERROR] ${err.message}`);
+        });
+        // Capture HTTP failures (4xx/5xx) from network requests
+        page.on("response", (response) => {
+          if (response.status() >= 400) {
+            consoleLogs.push(
+              `[HTTP ${response.status()}] ${response.request().method()} ${response.url()}`,
+            );
+          }
+          if (response.status() >= 500) {
+            consoleErrors.push(
+              `[HTTP ${response.status()}] ${response.request().method()} ${response.url()}`,
+            );
+          }
+        });
+        page.on("requestfailed", (request) => {
+          const failure = request.failure()?.errorText ?? "unknown";
+          consoleErrors.push(`[NET_FAIL] ${request.method()} ${request.url()} — ${failure}`);
+        });
 
         await page.goto(appUrl, { timeout: 15_000, waitUntil: "domcontentloaded" });
-        // Wait for SPA to render (networkidle is too strict for WebSocket apps)
-        await page.waitForTimeout(3_000);
 
-        // Click "Start Session"
+        // In bypass mode the app auto-connects to Gemini — wait for session.
+        // Without bypass, click "Start Session" manually.
         const startBtn = page.getByRole("button", { name: /start session/i });
-        await startBtn.click({ timeout: 10_000 });
+        try {
+          await startBtn.click({ timeout: 8_000 });
+        } catch {
+          // Button may not exist if bypass auto-connect already fired
+          consoleLogs.push("[voice-qa] Start Session button not found — assuming auto-connect");
+        }
+
+        // Wait for Gemini session to establish
+        await page.waitForTimeout(5_000);
 
         // Poll for tutor response (not a fixed timeout)
         const { transcript, tutorResponse } = await pollForTutorResponse(page, timeoutMs);
@@ -233,13 +270,20 @@ export async function runVoiceQa(params: VoiceQaParams): Promise<VoiceQaResult[]
           tutorResponse,
           screenshotPath,
           consoleErrors,
+          consoleLogs,
           passed: !!tutorResponse && consoleErrors.length === 0,
         });
       } finally {
         await browser.close();
       }
     } catch (err) {
-      results.push({ prompt, consoleErrors: [], passed: false, error: String(err) });
+      results.push({
+        prompt,
+        consoleErrors: [],
+        consoleLogs: [],
+        passed: false,
+        error: String(err),
+      });
     } finally {
       fs.rmSync(tmpDir, { recursive: true, force: true });
     }
@@ -268,6 +312,12 @@ export function formatVoiceReport(results: VoiceQaResult[]): string {
     }
     if (r.consoleErrors.length > 0) {
       lines.push(`  Console errors: ${r.consoleErrors.slice(0, 3).join("; ")}`);
+    }
+    if (r.consoleLogs.length > 0) {
+      lines.push(`  Console logs (last 10):`);
+      for (const log of r.consoleLogs.slice(-10)) {
+        lines.push(`    ${log}`);
+      }
     }
     lines.push("");
   }
