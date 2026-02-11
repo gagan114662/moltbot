@@ -17,6 +17,8 @@ import { agentCliCommand } from "../commands/agent-via-gateway.js";
 import { defaultRuntime } from "../runtime.js";
 import { runBrowserInspectStage } from "./browser-inspect.js";
 import { buildSummary, writeFeedbackToTarget } from "./feedback.js";
+import { runRodneyBrowserInspectStage } from "./rodney.js";
+import { buildShowboatProof } from "./showboat.js";
 import { runCoverageDiffStage } from "./stages-coverage.js";
 import { runReviewStage } from "./stages-review.js";
 import { runScreenshotDiffStage } from "./stages-screenshot-diff.js";
@@ -25,7 +27,7 @@ import { runUxEvalStage } from "./stages-ux-eval.js";
 import { runLintStage, runTypecheckStage, runTestStage } from "./stages.js";
 import { detectToolchain } from "./toolchain.js";
 import { runVideoVerification } from "./video-verify.js";
-import { runVoiceQaStage } from "./voice-qa.js";
+import { runVoiceQaLoopStage } from "./voice-qa-loop.js";
 import { createWorkerDashboard } from "./worker-dashboard.js";
 
 /** Check if git working tree is clean, auto-stash if dirty */
@@ -247,29 +249,59 @@ async function runVerification(
   }
 
   // Browser inspection (only if code checks pass and not skipped)
+  // Prefer Rodney (persistent Chrome + a11y) when available, fall back to Playwright
   const codeChecksPassed = checks.every((c) => c.passed);
   let screenshotPath: string | undefined;
   if (!config.noBrowser && codeChecksPassed) {
     emit({ type: "stage-start", stage: "browser" });
-    const { result: browserResult, inspect } = await runBrowserInspectStage({
-      cwd: config.cwd,
-      signal,
-      appUrl: config.appUrl,
-      headed: config.headed,
-    });
+
+    let browserResult: StageResult;
+    if (!config.noRodney) {
+      const rodney = await runRodneyBrowserInspectStage({
+        cwd: config.cwd,
+        signal,
+        appUrl: config.appUrl,
+      });
+      if (rodney.result.error?.includes("not installed")) {
+        // Rodney not available — fall back to Playwright
+        const pw = await runBrowserInspectStage({
+          cwd: config.cwd,
+          signal,
+          appUrl: config.appUrl,
+          headed: config.headed,
+        });
+        browserResult = pw.result;
+        screenshotPath = pw.inspect?.screenshotPath;
+      } else {
+        browserResult = rodney.result;
+        screenshotPath = rodney.inspect?.screenshotPath;
+      }
+    } else {
+      const pw = await runBrowserInspectStage({
+        cwd: config.cwd,
+        signal,
+        appUrl: config.appUrl,
+        headed: config.headed,
+      });
+      browserResult = pw.result;
+      screenshotPath = pw.inspect?.screenshotPath;
+    }
+
     checks.push(browserResult);
     emit({ type: "stage-done", result: browserResult });
-    screenshotPath = inspect?.screenshotPath;
   }
 
-  // Voice QA (only if browser passed and not skipped)
+  // Voice QA with TAO loop (only if code checks passed and not skipped)
   if (!config.noVoiceQa && codeChecksPassed) {
     emit({ type: "stage-start", stage: "voice-qa" });
-    const voiceQa = await runVoiceQaStage({
+    const voiceQa = await runVoiceQaLoopStage({
       cwd: config.cwd,
       appUrl: config.appUrl ?? "http://localhost:3000/app",
+      targetCwd: config.targetWorkspace,
+      tmuxTarget: config.tmuxTarget,
       script: config.voiceQaScript,
-      signal,
+      sourceFiles: config.voiceQaSourceFiles,
+      agentDiagnose: config.voiceQaDiagnose,
     });
     checks.push(voiceQa);
     emit({ type: "stage-done", result: voiceQa });
@@ -522,6 +554,30 @@ export async function runWorker(inputConfig: WorkerConfig): Promise<WorkerResult
           config.tmuxTarget,
         );
 
+        // Showboat proof-of-work document (non-blocking)
+        let proofPath: string | undefined;
+        if (!config.noShowboat) {
+          const partialResult: WorkerResult = {
+            ok: true,
+            iterations,
+            totalDurationMs: Date.now() - startTime,
+            video,
+            changedFiles,
+            stoppedEarly: false,
+            stopReason: "success",
+          };
+          const showboatResult = await buildShowboatProof({
+            cwd: config.cwd,
+            task: config.task,
+            workerResult: partialResult,
+            baselineRef,
+            changedFiles,
+          });
+          if (showboatResult.proofPath) {
+            proofPath = showboatResult.proofPath;
+          }
+        }
+
         const result: WorkerResult = {
           ok: true,
           iterations,
@@ -530,6 +586,7 @@ export async function runWorker(inputConfig: WorkerConfig): Promise<WorkerResult
           changedFiles,
           stoppedEarly: false,
           stopReason: "success",
+          proofPath,
         };
         emit({ type: "done", result });
         return result;

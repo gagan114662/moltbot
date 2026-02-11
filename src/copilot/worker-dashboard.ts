@@ -41,7 +41,7 @@ type DashboardState = {
   startedAt: Date;
   maxIterations: number;
   currentIteration: number;
-  phase: "agent" | "verify" | "video" | "done" | "failed" | "stalled";
+  phase: "agent" | "verify" | "video" | "proof" | "done" | "failed" | "stalled";
   currentStage?: string;
   completedIterations: IterationResult[];
   currentChecks: StageResult[];
@@ -84,6 +84,9 @@ function renderWorkerDashboard(state: DashboardState): string {
       break;
     case "video":
       phaseText = theme.warn("Capturing video proof...");
+      break;
+    case "proof":
+      phaseText = theme.warn("Generating proof document...");
       break;
     case "done":
       phaseText = theme.success("Done — all checks passed");

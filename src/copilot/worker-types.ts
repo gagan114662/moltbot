@@ -65,6 +65,14 @@ export type WorkerConfig = {
   noVoiceQa?: boolean;
   /** Voice QA student script (defaults to ELEMENTARY_MATH_SCRIPT) */
   voiceQaScript?: StudentScript;
+  /** Source files in target project for LLM-powered voice QA diagnosis */
+  voiceQaSourceFiles?: string[];
+  /** LLM function for code-aware voice QA diagnosis */
+  voiceQaDiagnose?: (prompt: string) => Promise<string>;
+  /** Skip Showboat proof document generation after success */
+  noShowboat?: boolean;
+  /** Skip Rodney browser automation (use Playwright instead) */
+  noRodney?: boolean;
 };
 
 export type IterationResult = {
@@ -85,6 +93,8 @@ export type WorkerResult = {
   changedFiles: string[];
   stoppedEarly: boolean;
   stopReason?: "success" | "max-iterations" | "stall" | "error";
+  /** Path to Showboat proof-of-work document */
+  proofPath?: string;
 };
 
 export type WorkerEvent =
