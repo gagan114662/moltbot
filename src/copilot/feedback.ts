@@ -8,7 +8,12 @@
 import fs from "node:fs";
 import fsp from "node:fs/promises";
 import path from "node:path";
-import type { CopilotFeedback, StageResult } from "./types.js";
+import type {
+  BehavioralObservation,
+  CopilotFeedback,
+  ProjectWarning,
+  StageResult,
+} from "./types.js";
 import { tmuxSendKeys } from "./tmux-send.js";
 
 const FEEDBACK_DIR = ".moltbot";
@@ -100,6 +105,13 @@ export function isPidAlive(pid: number): boolean {
   }
 }
 
+/** Extra context for enriched QA-FEEDBACK.md (senior engineer feedback). */
+export type FeedbackContext = {
+  behavioral?: BehavioralObservation[];
+  projectWarnings?: ProjectWarning[];
+  screenshotPaths?: Array<{ turn: string; path: string; description?: string }>;
+};
+
 /** Write feedback to both moltbot's workspace and the target project workspace,
  *  then nudge the scratchpad Claude Code session via tmux so it reads the results. */
 export async function writeFeedbackToTarget(
@@ -107,6 +119,7 @@ export async function writeFeedbackToTarget(
   targetCwd: string | undefined,
   feedback: CopilotFeedback,
   tmuxTarget?: string,
+  context?: FeedbackContext,
 ): Promise<void> {
   await writeFeedback(moltbotCwd, feedback);
   if (targetCwd && targetCwd !== moltbotCwd) {
@@ -114,7 +127,7 @@ export async function writeFeedbackToTarget(
   }
   // Always write QA-FEEDBACK.md to target workspace (even if same as moltbot cwd)
   if (targetCwd) {
-    await writeQaFeedbackMd(targetCwd, feedback);
+    await writeQaFeedbackMd(targetCwd, feedback, context);
   }
   // Nudge the Claude Code session in tmux so it picks up the feedback
   if (tmuxTarget) {
@@ -123,8 +136,8 @@ export async function writeFeedbackToTarget(
   }
 }
 
-/** Build human-readable QA feedback markdown */
-export function buildQaFeedbackMd(feedback: CopilotFeedback): string {
+/** Build human-readable QA feedback markdown (senior engineer style). */
+export function buildQaFeedbackMd(feedback: CopilotFeedback, context?: FeedbackContext): string {
   const lines: string[] = [
     "# QA Feedback from Moltbot",
     "",
@@ -134,23 +147,48 @@ export function buildQaFeedbackMd(feedback: CopilotFeedback): string {
 
   if (feedback.ok) {
     lines.push("## VERDICT: PASS", "", `All ${feedback.checks.length} checks passed.`);
-  } else {
-    const failed = feedback.checks.filter((c) => !c.passed);
-    lines.push(`## VERDICT: FAIL (${failed.length} check${failed.length !== 1 ? "s" : ""} failed)`);
-    lines.push("");
+    return lines.join("\n");
+  }
 
-    // Put diagnosis FIRST — it has the root cause and specific fix with file:line
-    // The summary contains the diagnosis section appended after "---"
-    const diagIdx = feedback.summary.indexOf("---\n\n# Diagnosis");
-    if (diagIdx >= 0) {
-      const diagSection = feedback.summary.slice(diagIdx + 4); // skip "---\n"
-      lines.push(diagSection);
-      lines.push("");
-      lines.push("---");
+  const failed = feedback.checks.filter((c) => !c.passed);
+  lines.push(`## VERDICT: FAIL (${failed.length} check${failed.length !== 1 ? "s" : ""} failed)`);
+  lines.push("");
+
+  // --- Section 1: What I Saw (behavioral observations — human-readable) ---
+  const behavioral = context?.behavioral ?? [];
+  if (behavioral.length > 0) {
+    lines.push("## What I Saw");
+    lines.push("");
+    for (const obs of behavioral) {
+      lines.push(obs.observation);
+    }
+    lines.push("");
+  }
+
+  // --- Section 1b: Screenshots (visual evidence) ---
+  const screenshots = context?.screenshotPaths ?? [];
+  if (screenshots.length > 0) {
+    lines.push("## Screenshots");
+    lines.push("");
+    for (const s of screenshots) {
+      if (s.description) {
+        lines.push(`**Turn "${s.turn}"**: ${s.description}`);
+      }
+      lines.push(`- Screenshot: \`${s.path}\``);
       lines.push("");
     }
+  }
 
-    lines.push("## Detailed Failures");
+  // --- Section 2: What to Fix (diagnosis with root cause + fix) ---
+  const diagIdx = feedback.summary.indexOf("---\n\n# Diagnosis");
+  if (diagIdx >= 0) {
+    const diagSection = feedback.summary.slice(diagIdx + 4); // skip "---\n"
+    lines.push("## What to Fix");
+    lines.push("");
+    lines.push(diagSection);
+    lines.push("");
+  } else if (failed.length > 0) {
+    lines.push("## What to Fix");
     lines.push("");
     for (const check of failed) {
       lines.push(`### ${check.stage} FAILED`);
@@ -159,24 +197,33 @@ export function buildQaFeedbackMd(feedback: CopilotFeedback): string {
       }
       lines.push("");
     }
-
-    lines.push("## Action Required");
-    lines.push("");
-    lines.push("**You MUST fix the issues above.** Steps:");
-    lines.push(
-      "1. Read the Diagnosis section — it tells you the root cause and exact fix with file:line",
-    );
-    lines.push("2. Open the referenced files and apply the suggested changes");
-    lines.push("3. Save and let the dev server hot-reload");
-    lines.push("4. Say 'done' when fixed so voice QA can re-test");
   }
 
-  // Include the raw report for reference
+  // --- Section 3: Heads Up (proactive project warnings) ---
+  const warnings = context?.projectWarnings ?? [];
+  if (warnings.length > 0) {
+    lines.push("## Heads Up (known project gotchas)");
+    lines.push("");
+    for (const w of warnings) {
+      lines.push(`- **${w.id}**: ${w.warning}`);
+    }
+    lines.push("");
+  }
+
+  // --- Section 4: Action ---
+  lines.push("## Action Required");
+  lines.push("");
+  lines.push("1. Read the sections above — fix root causes, not symptoms");
+  lines.push("2. Watch out for the gotchas in Heads Up");
+  lines.push("3. Save and let the dev server hot-reload");
+  lines.push('4. Say "done" when fixed so voice QA can re-test');
+
+  // --- Section 5: Technical Details (raw report, moved to bottom) ---
   const reportOnly = feedback.summary.includes("---\n\n# Diagnosis")
     ? feedback.summary.slice(0, feedback.summary.indexOf("---\n\n# Diagnosis"))
     : feedback.summary;
   if (reportOnly.trim()) {
-    lines.push("", "---", "", "## Raw Report", "", reportOnly.trim());
+    lines.push("", "---", "", "## Technical Details", "", reportOnly.trim());
   }
 
   return lines.join("\n");
@@ -186,8 +233,9 @@ export function buildQaFeedbackMd(feedback: CopilotFeedback): string {
 export async function writeQaFeedbackMd(
   targetCwd: string,
   feedback: CopilotFeedback,
+  context?: FeedbackContext,
 ): Promise<void> {
-  const md = buildQaFeedbackMd(feedback);
+  const md = buildQaFeedbackMd(feedback, context);
   const target = path.join(targetCwd, "QA-FEEDBACK.md");
   const tmp = `${target}.tmp`;
   await fsp.writeFile(tmp, md, "utf-8");

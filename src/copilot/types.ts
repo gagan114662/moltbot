@@ -60,6 +60,35 @@ export type CopilotFeedback = {
   summary: string;
 };
 
+// ---------------------------------------------------------------------------
+// Voice QA feedback types
+// ---------------------------------------------------------------------------
+
+export type PageHealthReport = {
+  hasErrorToast: boolean;
+  toastMessages: string[];
+  audioBlocked: boolean;
+  sessionConnected: boolean;
+  mediaStatus: "LIVE" | "OFF" | "loading" | "unknown";
+  hasAlertRole: boolean;
+  alertMessages: string[];
+  chatMessages: string[];
+  canvasCount: number;
+};
+
+export type BehavioralObservation = {
+  category: "tool-gap" | "conversation-flow" | "teaching-quality" | "audio-gap" | "frontend-error";
+  observation: string;
+  severity: "critical" | "major" | "minor" | "info";
+  evidence: string[];
+};
+
+export type ProjectWarning = {
+  id: string;
+  warning: string;
+  trigger: string;
+};
+
 export type PipelineEvent =
   | { type: "start"; triggerFiles: string[]; isCommit: boolean }
   | { type: "stage-start"; stage: string }

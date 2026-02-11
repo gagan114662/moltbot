@@ -14,7 +14,7 @@ import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
 import type { OpenClawConfig } from "../config/config.js";
-import type { StageResult } from "./types.js";
+import type { PageHealthReport, StageResult } from "./types.js";
 import type { EnrichedVoiceQaResult, WsEvent } from "./voice-qa-diagnosis.js";
 import { resolveChromePath } from "./browser-inspect.js";
 import {
@@ -43,8 +43,10 @@ export function assertVoicePlatform(): void {
 const CHATTERBOX_URL = "http://127.0.0.1:4123/v1/audio/speech";
 
 /**
- * Generate mono 16 kHz 16-bit LE PCM WAV from text.
- * Tries Chatterbox TTS first (natural voice), falls back to macOS `say`.
+ * Generate mono 48 kHz 16-bit LE PCM WAV from text.
+ * 48 kHz matches Chrome's WebRTC capture rate — avoids resampling artifacts
+ * that make audio sound robotic through --use-file-for-fake-audio-capture.
+ * Tries Gemini TTS first, then Chatterbox, falls back to macOS `say`.
  * Returns which TTS engine was used: "gemini" | "chatterbox" | "macos-say".
  */
 export function generateWav(text: string, outputPath: string): string {
@@ -107,7 +109,7 @@ export function generateWav(text: string, outputPath: string): string {
       throw new Error("No audio in Gemini TTS response");
     }
 
-    // Decode base64 → raw PCM (24kHz s16le mono), then convert to 16kHz WAV
+    // Decode base64 → raw PCM (24kHz s16le mono), then convert to 48kHz WAV
     const tmpPcm = `${outputPath}.gemini.pcm`;
     fs.writeFileSync(tmpPcm, Buffer.from(audioBase64, "base64"));
 
@@ -124,7 +126,7 @@ export function generateWav(text: string, outputPath: string): string {
         "-i",
         tmpPcm,
         "-ar",
-        "16000",
+        "48000",
         "-ac",
         "1",
         "-sample_fmt",
@@ -181,7 +183,7 @@ export function generateWav(text: string, outputPath: string): string {
       { timeout: 20_000 },
     );
 
-    // Chatterbox returns 24kHz float WAV — convert to 16kHz 16-bit mono PCM
+    // Chatterbox returns 24kHz float WAV — convert to 48kHz 16-bit mono PCM
     execFileSync(
       "ffmpeg",
       [
@@ -189,7 +191,7 @@ export function generateWav(text: string, outputPath: string): string {
         "-i",
         tmpFloat,
         "-ar",
-        "16000",
+        "48000",
         "-ac",
         "1",
         "-sample_fmt",
@@ -215,7 +217,7 @@ export function generateWav(text: string, outputPath: string): string {
 
   // Fallback: macOS say (robotic but reliable)
   console.warn(`[voice-qa] TTS: macOS say (ROBOTIC FALLBACK) — "${text.slice(0, 40)}..."`);
-  execFileSync("say", ["-o", outputPath, "--data-format=LEI16@16000", text], {
+  execFileSync("say", ["-o", outputPath, "--data-format=LEI16@48000", text], {
     timeout: 15_000,
   });
   validateWavHeader(outputPath);
@@ -223,7 +225,7 @@ export function generateWav(text: string, outputPath: string): string {
 }
 
 /**
- * Validate WAV header: RIFF, WAVE, mono, 16 kHz, 16-bit.
+ * Validate WAV header: RIFF, WAVE, mono, 48 kHz, 16-bit.
  * Scans for the `fmt ` chunk (macOS `say` inserts JUNK before fmt).
  */
 export function validateWavHeader(wavPath: string): void {
@@ -259,8 +261,8 @@ export function validateWavHeader(wavPath: string): void {
   if (channels !== 1) {
     throw new Error(`Expected mono (1 channel), got ${channels}`);
   }
-  if (sampleRate !== 16000) {
-    throw new Error(`Expected 16kHz, got ${sampleRate}`);
+  if (sampleRate !== 48000) {
+    throw new Error(`Expected 48kHz, got ${sampleRate}`);
   }
   if (bitsPerSample !== 16) {
     throw new Error(`Expected 16-bit, got ${bitsPerSample}`);
@@ -376,6 +378,8 @@ export type TurnResult = {
   screenshotPath?: string;
   consoleErrors: string[];
   consoleLogs: string[];
+  /** Frontend health snapshot from Playwright DOM inspection. */
+  pageHealth?: import("./types.js").PageHealthReport;
 };
 
 export type MultiTurnResult = {
@@ -441,6 +445,18 @@ export const ELEMENTARY_MATH_SCRIPT: StudentScript = {
 // ---------------------------------------------------------------------------
 // Poll for transcript
 // ---------------------------------------------------------------------------
+
+// ---------------------------------------------------------------------------
+// Greeting detection (shared between single-prompt and diagnosis engine)
+// ---------------------------------------------------------------------------
+
+const GREETING_PATTERN =
+  /what.*(?:learn|div|curious|work on|study|today)|hey there|hello|hi there|welcome/i;
+
+/** Check if a tutor response is just a greeting rather than an actual answer. */
+export function isGreetingResponse(response: string): boolean {
+  return GREETING_PATTERN.test(response);
+}
 
 /** UI text fragments to strip from subtitle scraping (buttons, labels, etc.) */
 const SUBTITLE_NOISE = ["End Session", "Start Session", "Settings", "Menu"];
@@ -631,6 +647,10 @@ export async function runVoiceQa(params: VoiceQaParams): Promise<VoiceQaResult[]
         const screenshotPath = path.join(evidenceDir, `voice-${Date.now()}.png`);
         await page.screenshot({ path: screenshotPath, fullPage: true });
 
+        // A greeting-only response is a FAIL — tutor must actually answer
+        const isGreeting = tutorResponse ? isGreetingResponse(tutorResponse) : false;
+        const actuallyAnswered = !!tutorResponse && !isGreeting;
+
         results.push({
           prompt,
           transcript,
@@ -639,7 +659,10 @@ export async function runVoiceQa(params: VoiceQaParams): Promise<VoiceQaResult[]
           consoleErrors,
           consoleLogs,
           wsEvents,
-          passed: !!tutorResponse && consoleErrors.length === 0,
+          passed: actuallyAnswered && consoleErrors.length === 0,
+          error: isGreeting
+            ? `Tutor gave greeting instead of answering: "${tutorResponse?.slice(0, 80)}"`
+            : undefined,
         });
       } finally {
         await browser.close();
@@ -758,7 +781,7 @@ export function formatMultiTurnReport(result: MultiTurnResult): string {
 // WAV stitching — concatenate per-turn WAVs with silence gaps
 // ---------------------------------------------------------------------------
 
-const SAMPLE_RATE = 16_000;
+const SAMPLE_RATE = 48_000;
 const BYTES_PER_SAMPLE = 2; // 16-bit
 
 /** Generate silence as raw PCM bytes (16-bit LE, mono, 16kHz). */
@@ -906,6 +929,15 @@ Check for:
 
 For "drawingCorrect": true if the drawing reasonably matches what the student asked for.
 
+Also check overall page health (add to issues if found):
+- CRITICAL: Error overlay, error boundary, or crash screen visible
+- MAJOR: Red error toast notification visible (read its text)
+- MAJOR: Session status showing "disconnected" or "Start Session" instead of "End Session"
+- MAJOR: Yellow "Enable Audio" button pulsing (audio not playing)
+- MINOR: Any warning toasts or alert banners visible
+
+Describe the page as a human tester would: what do you SEE on screen beyond the canvas?
+
 Return ONLY the JSON object, no markdown.`;
 
 /** Parse a vision model's response into a VisualAssessment. */
@@ -962,6 +994,110 @@ export function parseVisualAssessment(raw: string): VisualAssessment {
 // ---------------------------------------------------------------------------
 // Multi-turn runner
 // ---------------------------------------------------------------------------
+
+/**
+ * Inspect the page DOM for visible health signals a human would notice.
+ * Queries sonner toasts, session status, audio blocked, alerts, chat, canvas.
+ */
+export async function inspectPageHealth(
+  page: import("playwright-core").Page,
+): Promise<PageHealthReport> {
+  const report: PageHealthReport = {
+    hasErrorToast: false,
+    toastMessages: [],
+    audioBlocked: false,
+    sessionConnected: false,
+    mediaStatus: "unknown",
+    hasAlertRole: false,
+    alertMessages: [],
+    chatMessages: [],
+    canvasCount: 0,
+  };
+
+  try {
+    // Sonner toast notifications
+    const toasts = page.locator("[data-sonner-toast]");
+    const toastCount = await toasts.count().catch(() => 0);
+    if (toastCount > 0) {
+      report.hasErrorToast = true;
+      for (let i = 0; i < Math.min(toastCount, 5); i++) {
+        const text = await toasts
+          .nth(i)
+          .textContent()
+          .catch(() => null);
+        if (text?.trim()) {
+          report.toastMessages.push(text.trim());
+        }
+      }
+    }
+
+    // Audio blocked indicator ("Enable Audio" button)
+    report.audioBlocked = await page
+      .locator('button:has-text("Enable Audio")')
+      .isVisible({ timeout: 500 })
+      .catch(() => false);
+
+    // Session connected ("End Session" = connected, "Start Session" = disconnected)
+    report.sessionConnected = await page
+      .locator('button:has-text("End Session")')
+      .isVisible({ timeout: 500 })
+      .catch(() => false);
+
+    // Media status (LIVE / OFF)
+    const isLive = await page
+      .locator('text="LIVE"')
+      .isVisible({ timeout: 500 })
+      .catch(() => false);
+    const isOff = await page
+      .locator('text="OFF"')
+      .isVisible({ timeout: 500 })
+      .catch(() => false);
+    if (isLive) {
+      report.mediaStatus = "LIVE";
+    } else if (isOff) {
+      report.mediaStatus = "OFF";
+    }
+
+    // ARIA alert elements
+    const alerts = page.locator('[role="alert"]');
+    const alertCount = await alerts.count().catch(() => 0);
+    if (alertCount > 0) {
+      report.hasAlertRole = true;
+      for (let i = 0; i < Math.min(alertCount, 3); i++) {
+        const text = await alerts
+          .nth(i)
+          .textContent()
+          .catch(() => null);
+        if (text?.trim()) {
+          report.alertMessages.push(text.trim());
+        }
+      }
+    }
+
+    // Chat messages from tutor
+    const chatMsgs = page.locator('[data-testid="tutor-response"]');
+    const chatCount = await chatMsgs.count().catch(() => 0);
+    for (let i = 0; i < Math.min(chatCount, 5); i++) {
+      const text = await chatMsgs
+        .nth(i)
+        .textContent()
+        .catch(() => null);
+      if (text?.trim()) {
+        report.chatMessages.push(text.trim());
+      }
+    }
+
+    // Canvas count
+    report.canvasCount = await page
+      .locator("canvas")
+      .count()
+      .catch(() => 0);
+  } catch {
+    // Non-fatal — return partial report
+  }
+
+  return report;
+}
 
 /** Set up Playwright page listeners for console + WS + HTTP errors. */
 function attachPageListeners(
@@ -1275,6 +1411,9 @@ export async function runMultiTurnVoiceQa(
           turnErrors,
         );
 
+        // Inspect page health (what a human would see)
+        const pageHealth = await inspectPageHealth(page);
+
         turns.push({
           turnIndex: i,
           prompt: turn.prompt,
@@ -1288,6 +1427,7 @@ export async function runMultiTurnVoiceQa(
           screenshotPath,
           consoleErrors: turnErrors,
           consoleLogs: turnLogs,
+          pageHealth,
         });
 
         // Check session timeout

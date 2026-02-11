@@ -6,7 +6,7 @@
  * Produces actionable root-cause diagnoses instead of generic "tutor did not respond".
  */
 
-import type { VoiceQaResult } from "./voice-qa.js";
+import { isGreetingResponse, type VoiceQaResult } from "./voice-qa.js";
 
 // ---------------------------------------------------------------------------
 // Types
@@ -41,6 +41,8 @@ export type EnrichedVoiceQaResult = VoiceQaResult & {
   toolCalls?: string[];
   /** Visual assessment from screenshot analysis (for visual QA). */
   visualAssessment?: import("./voice-qa.js").VisualAssessment;
+  /** Frontend health snapshot from Playwright DOM inspection. */
+  pageHealth?: import("./types.js").PageHealthReport;
 };
 
 // ---------------------------------------------------------------------------
@@ -292,25 +294,18 @@ const KNOWLEDGE_BASE: DiagnosisRule[] = [
       const evidence: string[] = [];
       // Check if tutor response looks like a greeting rather than an answer
       if (result.tutorResponse) {
-        const resp = result.tutorResponse.toLowerCase();
-        const isGreeting =
-          /what.*(?:learn|div|curious|work on|study|today)/.test(resp) ||
-          /hey there|hello|hi there|welcome/.test(resp);
+        const greeting = isGreetingResponse(result.tutorResponse);
         const promptLooksLikeQuestion =
           result.prompt?.toLowerCase().includes("what is") ||
           result.prompt?.toLowerCase().includes("how") ||
           result.prompt?.toLowerCase().includes("can you");
-        if (isGreeting && promptLooksLikeQuestion) {
+        if (greeting && promptLooksLikeQuestion) {
           evidence.push(
             `Student asked: "${result.prompt}" but tutor said: "${result.tutorResponse.slice(0, 100)}"`,
           );
           // Count how many results show this same pattern
           const greetingCount = allResults.filter(
-            (r) =>
-              r.tutorResponse &&
-              /what.*(?:learn|div|curious|work on|study|today)|hey there|hello|hi there/i.test(
-                r.tutorResponse,
-              ),
+            (r) => r.tutorResponse && isGreetingResponse(r.tutorResponse),
           ).length;
           if (greetingCount > 1) {
             evidence.push(
@@ -663,12 +658,25 @@ export type SourceFile = {
   content: string;
 };
 
+/** Minimal iteration context for the LLM prompt — what was tried in previous iterations. */
+export type IterationContext = {
+  iteration: number;
+  nudgeSent: string;
+  diffStat: string;
+  changedFiles: string[];
+  /** Last ~30 lines of Claude's tmux output. */
+  tmuxScrollbackTail: string;
+  diffMatchResult: string;
+  previousDiagnoses: string[];
+};
+
 /** Build a rich prompt for an LLM to diagnose voice QA failures.
  *  When sourceFiles are provided, Codex can reference actual code for specific fixes. */
 export function buildLlmDiagnosisPrompt(
   results: EnrichedVoiceQaResult[],
   staticDiagnoses: Diagnosis[],
   sourceFiles?: SourceFile[],
+  iterationHistory?: IterationContext[],
 ): string {
   const parts: string[] = [];
 
@@ -790,6 +798,31 @@ export function buildLlmDiagnosisPrompt(
       parts.push("```typescript");
       parts.push(file.content);
       parts.push("```");
+      parts.push("");
+    }
+  }
+
+  // Include iteration history so LLM knows what was tried before
+  if (iterationHistory && iterationHistory.length > 0) {
+    parts.push("## Previous Attempts (iteration history)");
+    parts.push(
+      "Claude has been nudged to fix issues in previous iterations. Use this context to suggest DIFFERENT fixes if previous ones didn't work.",
+    );
+    parts.push("");
+    for (const ctx of iterationHistory) {
+      parts.push(`### Iteration ${ctx.iteration}`);
+      parts.push(`Nudge sent: "${ctx.nudgeSent}"`);
+      parts.push(`Files changed: ${ctx.changedFiles.join(", ") || "none"}`);
+      parts.push(`Diff match against our suggestion: ${ctx.diffMatchResult}`);
+      if (ctx.diffStat) {
+        parts.push(`Diff stat:\n${ctx.diffStat}`);
+      }
+      if (ctx.previousDiagnoses.length > 0) {
+        parts.push(`Diagnoses that iteration: ${ctx.previousDiagnoses.join("; ")}`);
+      }
+      if (ctx.tmuxScrollbackTail) {
+        parts.push(`Claude's output (last 30 lines):\n${ctx.tmuxScrollbackTail}`);
+      }
       parts.push("");
     }
   }
@@ -959,4 +992,450 @@ export function buildDiagnosisNudge(
   const extra = diagnoses.length > 2 ? ` (+${diagnoses.length - 2} more)` : "";
 
   return `Voice QA ${iteration}/${max} FAILED: ${detail}${extra}. Read QA-FEEDBACK.md, fix all issues, then say done.`;
+}
+
+/**
+ * Build a nudge that includes context from the previous iteration's observation.
+ * Tells Claude what it tried, what changed, and why it still fails.
+ * Accepts primitive fields (not IterationObservation) to avoid circular imports.
+ */
+export function buildContextualNudge(
+  iteration: number,
+  max: number,
+  diagnoses: Diagnosis[],
+  prevContext?: { changedFiles: string[]; diffMatchResult: string } | null,
+): string {
+  const baseNudge = buildDiagnosisNudge(iteration, max, diagnoses);
+  if (!prevContext || prevContext.changedFiles.length === 0) {
+    return baseNudge;
+  }
+
+  const parts: string[] = [];
+  parts.push(`Previous attempt: you changed ${prevContext.changedFiles.join(", ")}`);
+
+  if (prevContext.diffMatchResult === "none") {
+    parts.push("but you did NOT apply the suggested diff from QA-FEEDBACK.md");
+  } else if (prevContext.diffMatchResult === "partial") {
+    parts.push("but only partially applied the suggested fix");
+  } else if (prevContext.diffMatchResult === "full") {
+    parts.push("and applied the fix, but the test STILL fails — try a different approach");
+  }
+
+  const contextStr = parts.join(", ") + ".";
+
+  // Inject context before "Read QA-FEEDBACK.md..."
+  return baseNudge.replace("Read QA-FEEDBACK.md", `${contextStr} Read QA-FEEDBACK.md`);
+}
+
+// ---------------------------------------------------------------------------
+// Behavioral Observations — human-like pattern detection
+// ---------------------------------------------------------------------------
+
+import type { BehavioralObservation, PageHealthReport, ProjectWarning } from "./types.js";
+
+/** Words that indicate the tutor promises a visual action. */
+const VISUAL_PROMISE_WORDS =
+  /\b(draw|show|write|illustrate|look at|let me|pizza|number line|diagram|picture|sketch|board|scratchpad)\b/i;
+
+/** Tool names associated with scratchpad drawing/writing. */
+const DRAW_TOOL_NAMES = new Set(["draw_annotation", "write_step", "clear_canvas", "draw_shape"]);
+
+/**
+ * Build human-readable behavioral observations from enriched voice QA results.
+ * These describe what a human tester would notice — not technical error codes.
+ */
+export function buildBehavioralObservations(
+  results: EnrichedVoiceQaResult[],
+): BehavioralObservation[] {
+  const obs: BehavioralObservation[] = [];
+  const allToolCalls = results.flatMap((r) => r.toolCalls ?? []);
+  const hasAnyDrawTools = allToolCalls.some((t) => DRAW_TOOL_NAMES.has(t));
+
+  // 1. "Says but doesn't do" — tutor talks about drawing but never calls tools
+  for (const r of results) {
+    if (r.tutorResponse && VISUAL_PROMISE_WORDS.test(r.tutorResponse) && !hasAnyDrawTools) {
+      const excerpt = r.tutorResponse.slice(0, 80);
+      obs.push({
+        category: "tool-gap",
+        severity: "major",
+        observation: `Adam talked about visual content ("${excerpt}...") but never actually used any scratchpad tools. The canvas stayed blank.`,
+        evidence: [`Tutor said: "${excerpt}"`, `Tool calls across all turns: none`],
+      });
+      break; // One observation is enough for this pattern
+    }
+  }
+
+  // 2. Conversation death — turn N responded, N+1..end silent
+  const respondedTurns = results.filter((r) => r.tutorResponse);
+  const silentTurns = results.filter((r) => !r.tutorResponse);
+  if (respondedTurns.length > 0 && silentTurns.length > 0 && results.length > 1) {
+    const lastRespondedIdx = results.findLastIndex((r) => r.tutorResponse);
+    const trailingSlience = results.length - 1 - lastRespondedIdx;
+    if (trailingSlience >= 1 && lastRespondedIdx < results.length - 1) {
+      obs.push({
+        category: "conversation-flow",
+        severity: "major",
+        observation: `The conversation died after turn ${lastRespondedIdx + 1}. Maya kept asking but Adam went silent for the remaining ${trailingSlience} turn(s).`,
+        evidence: [
+          `Last response at turn ${lastRespondedIdx + 1}`,
+          `${trailingSlience} silent turns after`,
+        ],
+      });
+    }
+  }
+
+  // 3. One-and-done — only 1 of N turns got a response
+  if (results.length > 1 && respondedTurns.length === 1) {
+    obs.push({
+      category: "conversation-flow",
+      severity: "major",
+      observation: `Adam responded only once (turn ${results.indexOf(respondedTurns[0]) + 1}) then stopped engaging entirely. Maya's other questions were ignored.`,
+      evidence: [`${results.length} turns total`, `Only 1 got a response`],
+    });
+  }
+
+  // 4. Verbal-only teaching — responses exist but zero tool calls anywhere
+  if (respondedTurns.length > 1 && allToolCalls.length === 0) {
+    obs.push({
+      category: "teaching-quality",
+      severity: "major",
+      observation:
+        "Adam explained everything verbally without ever using the scratchpad. A visual tutor that doesn't draw isn't meeting its purpose.",
+      evidence: [
+        `${respondedTurns.length} turns with verbal responses`,
+        `0 tool calls across all turns`,
+      ],
+    });
+  }
+
+  // 5. Canvas blank despite tool calls
+  const drawToolsCalled = allToolCalls.some((t) => DRAW_TOOL_NAMES.has(t));
+  const anyVisualBlank = results.some(
+    (r) => r.visualAssessment && !r.visualAssessment.drawingCorrect,
+  );
+  if (drawToolsCalled && anyVisualBlank) {
+    obs.push({
+      category: "tool-gap",
+      severity: "critical",
+      observation:
+        "Adam called drawing tools but nothing appeared correctly on the canvas — the rendering pipeline may be broken.",
+      evidence: [
+        `Draw tools called: ${allToolCalls.filter((t) => DRAW_TOOL_NAMES.has(t)).join(", ")}`,
+        `Visual assessment: drawing incorrect`,
+      ],
+    });
+  }
+
+  // 6-8. Frontend health observations (from page health reports)
+  const lastHealth = results.at(-1)?.pageHealth;
+  if (lastHealth) {
+    buildFrontendHealthObservations(lastHealth, obs);
+  }
+
+  return obs;
+}
+
+/** Add frontend health observations from DOM inspection. */
+function buildFrontendHealthObservations(
+  health: PageHealthReport,
+  obs: BehavioralObservation[],
+): void {
+  if (health.hasErrorToast && health.toastMessages.length > 0) {
+    obs.push({
+      category: "frontend-error",
+      severity: "major",
+      observation: `There's an error toast on screen saying: "${health.toastMessages[0]}"`,
+      evidence: health.toastMessages.map((m) => `Toast: ${m}`),
+    });
+  }
+
+  if (!health.sessionConnected) {
+    obs.push({
+      category: "frontend-error",
+      severity: "critical",
+      observation: `The session dropped — the button says "Start Session" instead of "End Session". Adam is disconnected.`,
+      evidence: [`sessionConnected: false`],
+    });
+  }
+
+  if (health.audioBlocked) {
+    obs.push({
+      category: "audio-gap",
+      severity: "major",
+      observation: `The "Enable Audio" button is showing — Chrome isn't playing Adam's audio. The student can't hear the tutor.`,
+      evidence: [`audioBlocked: true`],
+    });
+  }
+
+  if (health.hasAlertRole && health.alertMessages.length > 0) {
+    obs.push({
+      category: "frontend-error",
+      severity: "major",
+      observation: `Alert visible on page: "${health.alertMessages[0]}"`,
+      evidence: health.alertMessages.map((m) => `Alert: ${m}`),
+    });
+  }
+}
+
+// ---------------------------------------------------------------------------
+// Project Knowledge Base — proactive warnings from known gotchas
+// ---------------------------------------------------------------------------
+
+type ProjectGotcha = {
+  id: string;
+  trigger: RegExp;
+  warning: string;
+};
+
+const PROJECT_KNOWLEDGE: ProjectGotcha[] = [
+  {
+    id: "native-audio-tool-calling",
+    trigger: /sendToolResponse|\.toolResponse\(/,
+    warning:
+      "Native audio models have broken function calling via toolResponse. Use clientContent with functionResponse parts instead of sendToolResponse. See googleapis/python-genai#1832.",
+  },
+  {
+    id: "non-blocking-hallucination",
+    trigger: /NON_BLOCKING/,
+    warning:
+      "NON_BLOCKING scheduling causes the model to hallucinate answers before tool results return. Remove it. See python-genai#1894.",
+  },
+  {
+    id: "complex-schema-risk",
+    trigger: /propertyOrdering/,
+    warning:
+      "Complex tool schemas with propertyOrdering increase malformed function call risk on native audio. Keep schemas flat.",
+  },
+  {
+    id: "shared-cache-contamination",
+    trigger: /cachedModel|systemPromptCache/,
+    warning:
+      "Module-level caches (cachedModel, systemPromptCache) are shared between Adam and Maya. This causes cross-contamination. Each session needs its own instance.",
+  },
+  {
+    id: "concurrent-session-limit",
+    trigger: /live\.connect\(|LiveConnectConfig/,
+    warning:
+      "Gemini has concurrent session limits. If Maya and Adam both connect via live.connect(), one may get disconnected within 5 seconds.",
+  },
+  {
+    id: "silent-scheduling",
+    trigger: /SILENT|FunctionResponseScheduling\.SILENT/,
+    warning:
+      "FunctionResponseScheduling.SILENT is rejected by the server on native audio models. Don't use it.",
+  },
+];
+
+/**
+ * Scan text (code diff or source) against project knowledge base.
+ * Returns warnings for any known gotchas found.
+ */
+export function matchProjectKnowledge(text: string): ProjectWarning[] {
+  if (!text) {
+    return [];
+  }
+  const warnings: ProjectWarning[] = [];
+  for (const gotcha of PROJECT_KNOWLEDGE) {
+    if (gotcha.trigger.test(text)) {
+      warnings.push({
+        id: gotcha.id,
+        warning: gotcha.warning,
+        trigger: text.match(gotcha.trigger)?.[0] ?? "",
+      });
+    }
+  }
+  return warnings;
+}
+
+// ---------------------------------------------------------------------------
+// Plan review prompt
+// ---------------------------------------------------------------------------
+
+/**
+ * Build an LLM prompt to review Claude's fix plan before implementation.
+ * Used when plan-mode is detected in the tmux session.
+ */
+export function buildPlanReviewPrompt(
+  planContent: string,
+  behavioralObs: BehavioralObservation[],
+  projectWarnings: ProjectWarning[],
+): string {
+  const parts: string[] = [];
+
+  parts.push(
+    "You are a senior engineer reviewing a developer's plan to fix issues in a Gemini Live API voice tutor app.",
+  );
+  parts.push("Review their plan and give pointed, specific feedback.");
+  parts.push("");
+
+  parts.push("## The Plan");
+  parts.push(planContent.slice(0, 3000));
+  parts.push("");
+
+  if (projectWarnings.length > 0) {
+    parts.push("## Known Project Gotchas");
+    for (const w of projectWarnings) {
+      parts.push(`- ${w.warning}`);
+    }
+    parts.push("");
+  }
+
+  if (behavioralObs.length > 0) {
+    parts.push("## What Voice QA Observed");
+    for (const o of behavioralObs) {
+      parts.push(`- [${o.severity.toUpperCase()}] ${o.observation}`);
+    }
+    parts.push("");
+  }
+
+  parts.push("## Your Review");
+  parts.push("Be direct and specific. Point out:");
+  parts.push("1. Will this plan actually fix the root cause, or just a symptom?");
+  parts.push("2. Is the plan missing anything critical? (tool registration, session config, etc.)");
+  parts.push("3. Are there known gotchas the plan doesn't account for?");
+  parts.push("4. What will still be broken after this plan is implemented?");
+  parts.push("");
+  parts.push("Keep it under 150 words. Be conversational, like typing feedback into a terminal.");
+
+  return parts.join("\n");
+}
+
+// ---------------------------------------------------------------------------
+// Senior engineer nudge prompt
+// ---------------------------------------------------------------------------
+
+/**
+ * Build an LLM prompt to compose a conversational nudge (like a senior engineer typing).
+ * When agentDiagnose is not available, use buildSeniorNudgeFallback() instead.
+ */
+/** A screenshot description from the vision model for the nudge prompt. */
+export type ScreenshotDescription = {
+  turn: string;
+  description: string;
+  path: string;
+};
+
+export function buildSeniorNudgePrompt(
+  behavioral: BehavioralObservation[],
+  projectWarnings: ProjectWarning[],
+  diagnoses: Diagnosis[],
+  iteration: number,
+  maxIterations: number,
+  prevDiffStat?: string,
+  screenshots?: ScreenshotDescription[],
+): string {
+  const parts: string[] = [];
+
+  parts.push(
+    "You are a senior engineer who deeply knows this project. Write feedback for the developer as if typing it into their terminal.",
+  );
+  parts.push(
+    "Be conversational, direct, and specific. Name the actors (Adam = tutor, Maya = student).",
+  );
+  parts.push(
+    "Describe what you SAW, not error codes. Reference specific files to investigate. Keep it under 200 words.",
+  );
+  parts.push("");
+
+  parts.push(`## Iteration ${iteration}/${maxIterations}`);
+  parts.push("");
+
+  if (behavioral.length > 0) {
+    parts.push("## What I Observed");
+    for (const o of behavioral) {
+      parts.push(`- ${o.observation}`);
+    }
+    parts.push("");
+  }
+
+  if (screenshots && screenshots.length > 0) {
+    parts.push("## What the Screen Showed (from screenshots)");
+    for (const s of screenshots) {
+      parts.push(`- Turn "${s.turn}": ${s.description}`);
+    }
+    parts.push("");
+  }
+
+  if (projectWarnings.length > 0) {
+    parts.push("## Known Gotchas Triggered");
+    for (const w of projectWarnings) {
+      parts.push(`- ${w.warning}`);
+    }
+    parts.push("");
+  }
+
+  if (diagnoses.length > 0) {
+    parts.push("## Technical Diagnosis (top 2)");
+    for (const d of diagnoses.slice(0, 2)) {
+      parts.push(`- [${d.severity.toUpperCase()}] ${d.rootCause}: ${d.explanation.slice(0, 200)}`);
+    }
+    parts.push("");
+  }
+
+  if (prevDiffStat) {
+    parts.push("## Claude's Last Changes");
+    parts.push(prevDiffStat);
+    parts.push("");
+  }
+
+  parts.push('End with: Fix these, then say "done" so I can retest. Details in QA-FEEDBACK.md.');
+
+  return parts.join("\n");
+}
+
+/**
+ * Build a senior engineer nudge without LLM — pure string composition from
+ * behavioral observations + project warnings. Used as fallback when agentDiagnose
+ * is not available.
+ */
+export function buildSeniorNudgeFallback(
+  behavioral: BehavioralObservation[],
+  projectWarnings: ProjectWarning[],
+  diagnoses: Diagnosis[],
+  iteration: number,
+  maxIterations: number,
+  screenshots?: ScreenshotDescription[],
+): string {
+  const parts: string[] = [];
+
+  parts.push(
+    `Hey — I watched the session (attempt ${iteration}/${maxIterations}) and here's what I saw:`,
+  );
+  parts.push("");
+
+  // Use behavioral observations if available (human-like)
+  if (behavioral.length > 0) {
+    for (const o of behavioral) {
+      parts.push(o.observation);
+    }
+  } else if (diagnoses.length > 0) {
+    // Fall back to technical diagnoses
+    for (const d of diagnoses.slice(0, 2)) {
+      parts.push(`${d.rootCause}: ${d.explanation.split(".")[0]}.`);
+    }
+  } else {
+    parts.push("Something's still off — check QA-FEEDBACK.md for details.");
+  }
+
+  // Include screenshot descriptions if available
+  if (screenshots && screenshots.length > 0) {
+    parts.push("");
+    parts.push("Here's what the screen showed:");
+    for (const s of screenshots.slice(0, 2)) {
+      parts.push(`- "${s.turn}": ${s.description.split(".")[0]}.`);
+    }
+  }
+
+  if (projectWarnings.length > 0) {
+    parts.push("");
+    parts.push("Heads up:");
+    for (const w of projectWarnings) {
+      parts.push(`- ${w.warning.split(".")[0]}.`);
+    }
+  }
+
+  parts.push("");
+  parts.push('Fix these, then say "done" so I can retest. Details in QA-FEEDBACK.md.');
+
+  return parts.join("\n");
 }

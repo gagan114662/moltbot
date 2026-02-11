@@ -1,11 +1,23 @@
 import { describe, expect, it } from "vitest";
-import type { Diagnosis, EnrichedVoiceQaResult, WsEvent } from "./voice-qa-diagnosis.js";
+import type {
+  Diagnosis,
+  EnrichedVoiceQaResult,
+  IterationContext,
+  ScreenshotDescription,
+  WsEvent,
+} from "./voice-qa-diagnosis.js";
 import {
+  buildBehavioralObservations,
+  buildContextualNudge,
   buildDiagnosisNudge,
   buildLlmDiagnosisPrompt,
+  buildPlanReviewPrompt,
+  buildSeniorNudgeFallback,
+  buildSeniorNudgePrompt,
   diagnose,
   enrichWsEventsFromConsole,
   formatDiagnosisReport,
+  matchProjectKnowledge,
   mergeDiagnoses,
   parseLlmDiagnosis,
 } from "./voice-qa-diagnosis.js";
@@ -691,5 +703,384 @@ describe("buildLlmDiagnosisPrompt — diff instructions", () => {
     expect(prompt).toContain("--- a/");
     expect(prompt).toContain("+++ b/");
     expect(prompt).toContain("@@ -LINE,COUNT +LINE,COUNT @@");
+  });
+});
+
+describe("buildLlmDiagnosisPrompt — iteration history", () => {
+  it("includes previous attempt context when history provided", () => {
+    const history: IterationContext[] = [
+      {
+        iteration: 1,
+        nudgeSent: "Voice QA 1/5 FAILED: WS crash",
+        diffStat: " 1 file changed, 3 insertions(+), 2 deletions(-)",
+        changedFiles: ["useScratchpadAI.ts"],
+        tmuxScrollbackTail: "I'll fix the tool response...",
+        diffMatchResult: "partial",
+        previousDiagnoses: ["WS crash"],
+      },
+    ];
+    const prompt = buildLlmDiagnosisPrompt([makeResult({})], [], [], history);
+    expect(prompt).toContain("Previous Attempts");
+    expect(prompt).toContain("Iteration 1");
+    expect(prompt).toContain("useScratchpadAI.ts");
+    expect(prompt).toContain("partial");
+    expect(prompt).toContain("DIFFERENT fixes");
+  });
+
+  it("omits history section when no history", () => {
+    const prompt = buildLlmDiagnosisPrompt([makeResult({})], []);
+    expect(prompt).not.toContain("Previous Attempts");
+  });
+});
+
+describe("buildContextualNudge", () => {
+  const diag: Diagnosis = {
+    id: "test",
+    severity: "critical",
+    rootCause: "WS crash",
+    explanation: "WebSocket crashed",
+    suggestedFix: "Fix the WS",
+    evidence: [],
+    count: 1,
+  };
+
+  it("returns base nudge when no previous context", () => {
+    const nudge = buildContextualNudge(2, 5, [diag]);
+    expect(nudge).toBe(buildDiagnosisNudge(2, 5, [diag]));
+  });
+
+  it("returns base nudge when previous context has no changed files", () => {
+    const nudge = buildContextualNudge(2, 5, [diag], {
+      changedFiles: [],
+      diffMatchResult: "unknown",
+    });
+    expect(nudge).toBe(buildDiagnosisNudge(2, 5, [diag]));
+  });
+
+  it("includes changed files and 'did NOT apply' for diffMatchResult=none", () => {
+    const nudge = buildContextualNudge(2, 5, [diag], {
+      changedFiles: ["src/hooks/useScratchpadAI.ts"],
+      diffMatchResult: "none",
+    });
+    expect(nudge).toContain("you changed src/hooks/useScratchpadAI.ts");
+    expect(nudge).toContain("did NOT apply the suggested diff");
+  });
+
+  it("indicates partial match", () => {
+    const nudge = buildContextualNudge(2, 5, [diag], {
+      changedFiles: ["file.ts"],
+      diffMatchResult: "partial",
+    });
+    expect(nudge).toContain("partially applied");
+  });
+
+  it("indicates full match with different-approach hint", () => {
+    const nudge = buildContextualNudge(3, 5, [diag], {
+      changedFiles: ["file.ts"],
+      diffMatchResult: "full",
+    });
+    expect(nudge).toContain("try a different approach");
+  });
+});
+
+// ---------------------------------------------------------------------------
+// buildBehavioralObservations
+// ---------------------------------------------------------------------------
+
+describe("buildBehavioralObservations", () => {
+  it("detects says-but-doesn't-do (tutor talks about drawing, no tools)", () => {
+    const results = [
+      makeResult({
+        passed: false,
+        tutorResponse: "Let me draw a pizza to show you fractions!",
+        toolCalls: [],
+      }),
+    ];
+    const obs = buildBehavioralObservations(results);
+    const toolGap = obs.find((o) => o.category === "tool-gap");
+    expect(toolGap).toBeDefined();
+    expect(toolGap!.observation).toContain("Adam talked about visual content");
+    expect(toolGap!.observation).toContain("scratchpad tools");
+    expect(toolGap!.severity).toBe("major");
+  });
+
+  it("detects conversation death (respond then silence)", () => {
+    const results = [
+      makeResult({ passed: true, tutorResponse: "Hello there!" }),
+      makeResult({ passed: false, tutorResponse: undefined }),
+      makeResult({ passed: false, tutorResponse: undefined }),
+    ];
+    const obs = buildBehavioralObservations(results);
+    const death = obs.find(
+      (o) => o.category === "conversation-flow" && o.observation.includes("died"),
+    );
+    expect(death).toBeDefined();
+    expect(death!.observation).toContain("turn 1");
+    expect(death!.observation).toContain("Adam went silent");
+  });
+
+  it("detects one-and-done (only 1 response across multiple turns)", () => {
+    const results = [
+      makeResult({ passed: false, tutorResponse: undefined }),
+      makeResult({ passed: true, tutorResponse: "Just this once" }),
+      makeResult({ passed: false, tutorResponse: undefined }),
+    ];
+    const obs = buildBehavioralObservations(results);
+    const oneAndDone = obs.find((o) => o.observation.includes("responded only once"));
+    expect(oneAndDone).toBeDefined();
+    expect(oneAndDone!.observation).toContain("turn 2");
+  });
+
+  it("detects verbal-only teaching (responses but zero tools)", () => {
+    const results = [
+      makeResult({ passed: true, tutorResponse: "Let me explain..." }),
+      makeResult({ passed: true, tutorResponse: "The answer is..." }),
+    ];
+    const obs = buildBehavioralObservations(results);
+    const verbalOnly = obs.find((o) => o.category === "teaching-quality");
+    expect(verbalOnly).toBeDefined();
+    expect(verbalOnly!.observation).toContain("verbally");
+    expect(verbalOnly!.observation).toContain("doesn't draw");
+  });
+
+  it("detects frontend error toast", () => {
+    const results = [
+      makeResult({
+        passed: false,
+        pageHealth: {
+          hasErrorToast: true,
+          toastMessages: ["WebSocket disconnected"],
+          audioBlocked: false,
+          sessionConnected: true,
+          mediaStatus: "LIVE",
+          hasAlertRole: false,
+          alertMessages: [],
+          chatMessages: [],
+          canvasCount: 1,
+        },
+      }),
+    ];
+    const obs = buildBehavioralObservations(results);
+    const toast = obs.find((o) => o.category === "frontend-error");
+    expect(toast).toBeDefined();
+    expect(toast!.observation).toContain("WebSocket disconnected");
+  });
+
+  it("detects session disconnected", () => {
+    const results = [
+      makeResult({
+        passed: false,
+        pageHealth: {
+          hasErrorToast: false,
+          toastMessages: [],
+          audioBlocked: false,
+          sessionConnected: false,
+          mediaStatus: "OFF",
+          hasAlertRole: false,
+          alertMessages: [],
+          chatMessages: [],
+          canvasCount: 1,
+        },
+      }),
+    ];
+    const obs = buildBehavioralObservations(results);
+    const disconn = obs.find((o) => o.observation.includes("session dropped"));
+    expect(disconn).toBeDefined();
+    expect(disconn!.severity).toBe("critical");
+  });
+
+  it("returns empty array when everything is fine", () => {
+    const results = [
+      makeResult({
+        passed: true,
+        tutorResponse: "Four!",
+        toolCalls: ["write_step"],
+      }),
+    ];
+    const obs = buildBehavioralObservations(results);
+    // No major observations for a passing result with tools
+    expect(obs.filter((o) => o.severity === "critical" || o.severity === "major")).toHaveLength(0);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// matchProjectKnowledge
+// ---------------------------------------------------------------------------
+
+describe("matchProjectKnowledge", () => {
+  it("fires native-audio-tool-calling for sendToolResponse", () => {
+    const warnings = matchProjectKnowledge("session.sendToolResponse(resp)");
+    expect(warnings).toHaveLength(1);
+    expect(warnings[0].id).toBe("native-audio-tool-calling");
+    expect(warnings[0].warning).toContain("clientContent");
+  });
+
+  it("fires non-blocking-hallucination for NON_BLOCKING", () => {
+    const warnings = matchProjectKnowledge('scheduling: "NON_BLOCKING"');
+    expect(warnings).toHaveLength(1);
+    expect(warnings[0].id).toBe("non-blocking-hallucination");
+  });
+
+  it("fires silent-scheduling for FunctionResponseScheduling.SILENT", () => {
+    const warnings = matchProjectKnowledge("FunctionResponseScheduling.SILENT");
+    expect(warnings.some((w) => w.id === "silent-scheduling")).toBe(true);
+  });
+
+  it("fires concurrent-session-limit for live.connect()", () => {
+    const warnings = matchProjectKnowledge("await genAI.live.connect(config)");
+    expect(warnings.some((w) => w.id === "concurrent-session-limit")).toBe(true);
+  });
+
+  it("returns empty for clean code", () => {
+    const warnings = matchProjectKnowledge("const x = 1 + 2;");
+    expect(warnings).toHaveLength(0);
+  });
+
+  it("returns empty for empty input", () => {
+    expect(matchProjectKnowledge("")).toHaveLength(0);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// buildSeniorNudgeFallback
+// ---------------------------------------------------------------------------
+
+describe("buildSeniorNudgeFallback", () => {
+  it("produces conversational text from behavioral observations", () => {
+    const behavioral = [
+      {
+        category: "tool-gap" as const,
+        severity: "major" as const,
+        observation: "Adam talked about drawing a pizza but never used scratchpad tools.",
+        evidence: ["Tutor said: draw a pizza"],
+      },
+    ];
+    const nudge = buildSeniorNudgeFallback(behavioral, [], [], 1, 5);
+    expect(nudge).toContain("I watched the session");
+    expect(nudge).toContain("Adam talked about drawing");
+    expect(nudge).toContain('say "done"');
+  });
+
+  it("includes project warnings as heads-up", () => {
+    const warnings = [
+      {
+        id: "native-audio-tool-calling",
+        warning: "Native audio models have broken function calling. Use clientContent instead.",
+        trigger: "sendToolResponse",
+      },
+    ];
+    const nudge = buildSeniorNudgeFallback([], warnings, [], 2, 5);
+    expect(nudge).toContain("Heads up:");
+    expect(nudge).toContain("Native audio models have broken function calling");
+  });
+
+  it("includes screenshot descriptions when available", () => {
+    const screenshots: ScreenshotDescription[] = [
+      {
+        turn: "What is 2+2?",
+        description: "Blank canvas with no content visible",
+        path: "/tmp/screenshot.png",
+      },
+    ];
+    const nudge = buildSeniorNudgeFallback([], [], [], 1, 5, screenshots);
+    expect(nudge).toContain("screen showed");
+    expect(nudge).toContain("Blank canvas");
+  });
+
+  it("falls back to diagnoses when no behavioral observations", () => {
+    const diag: Diagnosis = {
+      id: "test",
+      severity: "critical",
+      rootCause: "WS crash",
+      explanation: "WebSocket crashed after tool response.",
+      suggestedFix: "Fix it",
+      evidence: [],
+      count: 1,
+    };
+    const nudge = buildSeniorNudgeFallback([], [], [diag], 1, 5);
+    expect(nudge).toContain("WS crash");
+  });
+});
+
+// ---------------------------------------------------------------------------
+// buildSeniorNudgePrompt
+// ---------------------------------------------------------------------------
+
+describe("buildSeniorNudgePrompt", () => {
+  it("includes behavioral observations in prompt", () => {
+    const behavioral = [
+      {
+        category: "conversation-flow" as const,
+        severity: "major" as const,
+        observation: "The conversation died after turn 1.",
+        evidence: [],
+      },
+    ];
+    const prompt = buildSeniorNudgePrompt(behavioral, [], [], 1, 5);
+    expect(prompt).toContain("What I Observed");
+    expect(prompt).toContain("conversation died");
+  });
+
+  it("includes screenshot descriptions in prompt", () => {
+    const screenshots: ScreenshotDescription[] = [
+      {
+        turn: "Draw a circle",
+        description: "Canvas shows a partially drawn shape",
+        path: "/tmp/shot.png",
+      },
+    ];
+    const prompt = buildSeniorNudgePrompt([], [], [], 1, 5, undefined, screenshots);
+    expect(prompt).toContain("What the Screen Showed");
+    expect(prompt).toContain("partially drawn shape");
+  });
+
+  it("includes previous diff stat", () => {
+    const prompt = buildSeniorNudgePrompt([], [], [], 2, 5, "1 file changed, 5 insertions");
+    expect(prompt).toContain("Claude's Last Changes");
+    expect(prompt).toContain("5 insertions");
+  });
+});
+
+// ---------------------------------------------------------------------------
+// buildPlanReviewPrompt
+// ---------------------------------------------------------------------------
+
+describe("buildPlanReviewPrompt", () => {
+  it("includes plan content in prompt", () => {
+    const prompt = buildPlanReviewPrompt(
+      "Step 1: Fix doKickoff()\nStep 2: Add tool instructions",
+      [],
+      [],
+    );
+    expect(prompt).toContain("The Plan");
+    expect(prompt).toContain("doKickoff");
+    expect(prompt).toContain("tool instructions");
+  });
+
+  it("includes project warnings", () => {
+    const warnings = [
+      {
+        id: "native-audio-tool-calling",
+        warning: "sendToolResponse crashes on native audio",
+        trigger: "sendToolResponse",
+      },
+    ];
+    const prompt = buildPlanReviewPrompt("Fix the relay code", [], warnings);
+    expect(prompt).toContain("Known Project Gotchas");
+    expect(prompt).toContain("sendToolResponse crashes");
+  });
+
+  it("includes behavioral observations", () => {
+    const obs = [
+      {
+        category: "tool-gap" as const,
+        severity: "major" as const,
+        observation: "Adam never drew on scratchpad",
+        evidence: [],
+      },
+    ];
+    const prompt = buildPlanReviewPrompt("My plan", obs, []);
+    expect(prompt).toContain("What Voice QA Observed");
+    expect(prompt).toContain("never drew on scratchpad");
   });
 });

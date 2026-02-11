@@ -79,8 +79,8 @@ describe("voice-qa", () => {
       return wavPath;
     }
 
-    it("accepts valid mono 16kHz 16-bit WAV", () => {
-      const buf = buildWav({ channels: 1, sampleRate: 16000, bits: 16 });
+    it("accepts valid mono 48kHz 16-bit WAV", () => {
+      const buf = buildWav({ channels: 1, sampleRate: 48000, bits: 16 });
       expect(() => validateWavHeader(writeWav(buf))).not.toThrow();
     });
 
@@ -97,8 +97,8 @@ describe("voice-qa", () => {
       buf.writeUInt32LE(16, 52);
       buf.writeUInt16LE(1, 56); // PCM
       buf.writeUInt16LE(1, 58); // mono
-      buf.writeUInt32LE(16000, 60); // 16kHz
-      buf.writeUInt32LE(32000, 64);
+      buf.writeUInt32LE(48000, 60); // 48kHz
+      buf.writeUInt32LE(96000, 64);
       buf.writeUInt16LE(2, 68);
       buf.writeUInt16LE(16, 70); // 16-bit
       expect(() => validateWavHeader(writeWav(buf))).not.toThrow();
@@ -111,17 +111,17 @@ describe("voice-qa", () => {
     });
 
     it("rejects stereo WAV", () => {
-      const buf = buildWav({ channels: 2, sampleRate: 16000, bits: 16 });
+      const buf = buildWav({ channels: 2, sampleRate: 48000, bits: 16 });
       expect(() => validateWavHeader(writeWav(buf))).toThrow("mono");
     });
 
     it("rejects wrong sample rate", () => {
       const buf = buildWav({ channels: 1, sampleRate: 44100, bits: 16 });
-      expect(() => validateWavHeader(writeWav(buf))).toThrow("16kHz");
+      expect(() => validateWavHeader(writeWav(buf))).toThrow("48kHz");
     });
 
     it("rejects wrong bit depth", () => {
-      const buf = buildWav({ channels: 1, sampleRate: 16000, bits: 8 });
+      const buf = buildWav({ channels: 1, sampleRate: 48000, bits: 8 });
       expect(() => validateWavHeader(writeWav(buf))).toThrow("16-bit");
     });
   });

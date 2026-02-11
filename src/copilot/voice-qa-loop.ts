@@ -8,20 +8,35 @@
  * Keeps iterating until all prompts pass or max iterations / stall limit hit.
  */
 
+import { execSync } from "node:child_process";
 import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
-import type { CopilotFeedback } from "./types.js";
-import type { EnrichedVoiceQaResult, SourceFile } from "./voice-qa-diagnosis.js";
+import type { FeedbackContext } from "./feedback.js";
+import type { CopilotFeedback, StageResult } from "./types.js";
+import type { BehavioralObservation, ProjectWarning } from "./types.js";
+import type {
+  Diagnosis,
+  EnrichedVoiceQaResult,
+  IterationContext,
+  ScreenshotDescription,
+  SourceFile,
+} from "./voice-qa-diagnosis.js";
 import type { MultiTurnResult, StudentScript, VoiceQaResult, VisualQaConfig } from "./voice-qa.js";
+import { resolveChromePath } from "./browser-inspect.js";
 import { writeFeedbackToTarget } from "./feedback.js";
-import { pollForTmuxIdle, tmuxSendKeys } from "./tmux-send.js";
+import { pollForClaudeState, tmuxCaptureScrollback, tmuxSendKeys } from "./tmux-send.js";
 import {
-  buildDiagnosisNudge,
+  buildBehavioralObservations,
+  buildContextualNudge,
   buildLlmDiagnosisPrompt,
+  buildPlanReviewPrompt,
+  buildSeniorNudgeFallback,
+  buildSeniorNudgePrompt,
   diagnose,
   enrichWsEventsFromConsole,
   formatDiagnosisReport,
+  matchProjectKnowledge,
   mergeDiagnoses,
   parseLlmDiagnosis,
 } from "./voice-qa-diagnosis.js";
@@ -77,6 +92,32 @@ export type VoiceQaLoopResult = {
   lastResults?: VoiceQaResult[];
   /** Multi-turn mode results (undefined in single-prompt mode) */
   lastMultiTurnResult?: MultiTurnResult;
+  /** Full iteration history for debugging / logging. */
+  iterationHistory?: IterationRecord[];
+};
+
+// ---------------------------------------------------------------------------
+// Observation types (Think-Act-Observe loop)
+// ---------------------------------------------------------------------------
+
+/** What we observed about Claude's response after an iteration. */
+type IterationObservation = {
+  diffStat: string;
+  diffFull: string;
+  changedFiles: string[];
+  tmuxScrollback: string;
+  diffMatchResult: "full" | "partial" | "none" | "unknown";
+};
+
+/** Record of a single iteration for history threading. */
+type IterationRecord = {
+  iteration: number;
+  diagnoses: Diagnosis[];
+  behavioral: BehavioralObservation[];
+  projectWarnings: ProjectWarning[];
+  nudgeSent: string;
+  observation: IterationObservation | null;
+  passed: boolean;
 };
 
 /** Fingerprint a set of enriched results for stall detection. */
@@ -123,6 +164,7 @@ function multiTurnToEnriched(result: MultiTurnResult): EnrichedVoiceQaResult[] {
     wsEvents: enrichWsEventsFromConsole(result.wsEvents, result.overallConsoleLogs),
     toolCalls: t.toolCalls,
     visualAssessment: t.visualAssessment,
+    pageHealth: t.pageHealth,
   }));
 }
 
@@ -136,11 +178,114 @@ function buildChecks(enriched: EnrichedVoiceQaResult[]) {
   }));
 }
 
+// ---------------------------------------------------------------------------
+// Observation helpers (Think-Act-Observe)
+// ---------------------------------------------------------------------------
+
+/** Capture git diff from the target repo. Cascading fallback: committed → staged → unstaged. */
+function captureTargetDiff(targetCwd: string): {
+  diffStat: string;
+  diffFull: string;
+  changedFiles: string[];
+} {
+  const run = (args: string): string => {
+    try {
+      return execSync(`git ${args}`, { cwd: targetCwd, encoding: "utf-8", timeout: 10_000 }).trim();
+    } catch {
+      return "";
+    }
+  };
+
+  // Try committed changes first (Claude may have committed)
+  let diffStat = run("diff --stat HEAD~1");
+  let diffFull = run("diff HEAD~1");
+  let nameOnly = run("diff --name-only HEAD~1");
+
+  // If no committed changes, try working tree vs HEAD
+  if (!diffFull) {
+    diffStat = run("diff --stat HEAD");
+    diffFull = run("diff HEAD");
+    nameOnly = run("diff --name-only HEAD");
+  }
+
+  // Last resort: unstaged only
+  if (!diffFull) {
+    diffStat = run("diff --stat");
+    diffFull = run("diff");
+    nameOnly = run("diff --name-only");
+  }
+
+  const changedFiles = nameOnly ? nameOnly.split("\n").filter(Boolean) : [];
+  return { diffStat, diffFull, changedFiles };
+}
+
+/**
+ * Check if Claude's actual diff contains the lines we suggested.
+ * Extracts `+` lines from suggested unified diffs and checks what % appear in the actual diff.
+ */
+export function assessDiffMatch(
+  actualDiff: string,
+  suggestedFixes: string[],
+): "full" | "partial" | "none" | "unknown" {
+  if (!actualDiff || suggestedFixes.length === 0) {
+    return "unknown";
+  }
+
+  let matchCount = 0;
+  let totalSuggestions = 0;
+
+  for (const fix of suggestedFixes) {
+    const suggestedLines = fix
+      .split("\n")
+      .filter((l) => l.startsWith("+") && !l.startsWith("+++"))
+      .map((l) => l.slice(1).trim())
+      .filter(Boolean);
+
+    if (suggestedLines.length === 0) {
+      continue;
+    }
+    totalSuggestions += suggestedLines.length;
+
+    for (const line of suggestedLines) {
+      if (actualDiff.includes(line)) {
+        matchCount++;
+      }
+    }
+  }
+
+  if (totalSuggestions === 0) {
+    return "unknown";
+  }
+  const ratio = matchCount / totalSuggestions;
+  if (ratio >= 0.8) {
+    return "full";
+  }
+  if (ratio >= 0.3) {
+    return "partial";
+  }
+  return "none";
+}
+
+/** OBSERVE: Capture what Claude did after going idle. */
+function observeIteration(
+  targetCwd: string,
+  tmuxTarget: string,
+  diagnoses: Diagnosis[],
+): IterationObservation {
+  const { diffStat, diffFull, changedFiles } = captureTargetDiff(targetCwd);
+  const tmuxScrollback = tmuxCaptureScrollback(tmuxTarget) ?? "";
+  const suggestedFixes = diagnoses.map((d) => d.suggestedFix).filter(Boolean);
+  const diffMatchResult = assessDiffMatch(diffFull, suggestedFixes);
+
+  return { diffStat, diffFull, changedFiles, tmuxScrollback, diffMatchResult };
+}
+
 /** Run diagnosis (static + LLM) on enriched results. */
 async function runDiagnosis(
   enriched: EnrichedVoiceQaResult[],
   params: VoiceQaLoopParams,
   iteration: number,
+  history: IterationRecord[] = [],
 ) {
   const staticDiagnoses = diagnose(enriched);
   let diagnoses = staticDiagnoses;
@@ -166,7 +311,23 @@ async function runDiagnosis(
         }
       }
 
-      const prompt = buildLlmDiagnosisPrompt(enriched, staticDiagnoses, codeFiles);
+      // Build iteration context for LLM
+      const iterationContext: IterationContext[] = history.map((h) => ({
+        iteration: h.iteration,
+        nudgeSent: h.nudgeSent,
+        diffStat: h.observation?.diffStat ?? "",
+        changedFiles: h.observation?.changedFiles ?? [],
+        tmuxScrollbackTail: (h.observation?.tmuxScrollback ?? "").split("\n").slice(-30).join("\n"),
+        diffMatchResult: h.observation?.diffMatchResult ?? "unknown",
+        previousDiagnoses: h.diagnoses.map((d) => d.rootCause),
+      }));
+
+      const prompt = buildLlmDiagnosisPrompt(
+        enriched,
+        staticDiagnoses,
+        codeFiles,
+        iterationContext.length > 0 ? iterationContext : undefined,
+      );
       const llmResponse = await params.agentDiagnose(prompt);
       const llmDiagnoses = parseLlmDiagnosis(llmResponse);
       if (llmDiagnoses.length > 0) {
@@ -195,6 +356,7 @@ export async function runVoiceQaLoop(params: VoiceQaLoopParams): Promise<VoiceQa
   let lastReport = "";
   let lastResults: VoiceQaResult[] | undefined;
   let lastMultiTurnResult: MultiTurnResult | undefined;
+  const iterationHistory: IterationRecord[] = [];
 
   for (let i = 1; i <= maxIterations; i++) {
     const evidenceDir = path.join(os.tmpdir(), `voice-qa-evidence-${Date.now()}`);
@@ -247,7 +409,34 @@ export async function runVoiceQaLoop(params: VoiceQaLoopParams): Promise<VoiceQa
     }
 
     // Run diagnosis (static + LLM)
-    const diagnoses = allPassed ? [] : await runDiagnosis(enriched, params, i);
+    const diagnoses = allPassed ? [] : await runDiagnosis(enriched, params, i, iterationHistory);
+
+    // Build behavioral observations + project warnings + screenshot descriptions
+    const behavioral = allPassed ? [] : buildBehavioralObservations(enriched);
+    const prevObs = iterationHistory.at(-1)?.observation;
+    const projectWarnings = matchProjectKnowledge(prevObs?.diffFull ?? "");
+    const screenshotDescs: ScreenshotDescription[] = enriched
+      .filter((r): r is typeof r & { visualAssessment: { canvasDescription: string } } =>
+        Boolean(r.visualAssessment?.canvasDescription),
+      )
+      .map((r) => ({
+        turn: r.prompt?.slice(0, 40) ?? "unknown",
+        description: r.visualAssessment.canvasDescription,
+        path: r.screenshotPath ?? "",
+      }));
+
+    // Build enriched feedback context for QA-FEEDBACK.md
+    const feedbackContext: FeedbackContext = {
+      behavioral: behavioral.length > 0 ? behavioral : undefined,
+      projectWarnings: projectWarnings.length > 0 ? projectWarnings : undefined,
+      screenshotPaths: enriched
+        .filter((r) => r.screenshotPath)
+        .map((r) => ({
+          turn: r.prompt?.slice(0, 40) ?? "unknown",
+          path: r.screenshotPath!,
+          description: r.visualAssessment?.canvasDescription,
+        })),
+    };
 
     // Build feedback
     const diagnosisSection =
@@ -263,7 +452,7 @@ export async function runVoiceQaLoop(params: VoiceQaLoopParams): Promise<VoiceQa
       checks: buildChecks(enriched),
       summary: lastReport + diagnosisSection,
     };
-    await writeFeedbackToTarget(params.cwd, params.targetCwd, feedback);
+    await writeFeedbackToTarget(params.cwd, params.targetCwd, feedback, undefined, feedbackContext);
 
     if (allPassed) {
       params.onProgress?.(`Voice QA iteration ${i}/${maxIterations}: PASSED`);
@@ -275,14 +464,20 @@ export async function runVoiceQaLoop(params: VoiceQaLoopParams): Promise<VoiceQa
         lastReport,
         lastResults,
         lastMultiTurnResult,
+        iterationHistory,
       };
     }
 
-    // Stall detection
+    // Stall detection (enhanced with observation)
     const topDiag = diagnoses.length > 0 ? diagnoses[0].rootCause : undefined;
     const fp = failureFingerprint(enriched, topDiag);
+    const lastObs = iterationHistory.at(-1)?.observation;
+
     if (fp === lastFingerprint && fp !== "") {
       consecutiveStalls++;
+      if (lastObs && lastObs.changedFiles.length === 0) {
+        params.onProgress?.(`Claude made no changes — may not have read QA-FEEDBACK.md`);
+      }
     } else {
       consecutiveStalls = 0;
     }
@@ -301,22 +496,71 @@ export async function runVoiceQaLoop(params: VoiceQaLoopParams): Promise<VoiceQa
         lastReport,
         lastResults,
         lastMultiTurnResult,
+        iterationHistory,
       };
     }
 
-    // Nudge Claude to fix
+    // === ACT: Send senior engineer nudge to Claude ===
     params.onProgress?.(
       `Voice QA iteration ${i}/${maxIterations}: FAILED — nudging Claude to fix...`,
     );
-    const nudge =
-      diagnoses.length > 0
-        ? buildDiagnosisNudge(i, maxIterations, diagnoses)
-        : buildNudge(i, maxIterations, enriched);
+    let nudge: string;
+    if (params.agentDiagnose && (behavioral.length > 0 || diagnoses.length > 0)) {
+      // LLM-composed nudge (senior engineer style)
+      try {
+        const nudgePrompt = buildSeniorNudgePrompt(
+          behavioral,
+          projectWarnings,
+          diagnoses,
+          i,
+          maxIterations,
+          prevObs?.diffStat,
+          screenshotDescs.length > 0 ? screenshotDescs : undefined,
+        );
+        const llmNudge = await params.agentDiagnose(nudgePrompt);
+        nudge = llmNudge.trim().slice(0, 1000);
+        params.onProgress?.(`LLM composed senior engineer nudge (${nudge.length} chars)`);
+      } catch (err: unknown) {
+        params.onProgress?.(`LLM nudge failed (non-fatal): ${String(err)}`);
+        nudge = buildSeniorNudgeFallback(
+          behavioral,
+          projectWarnings,
+          diagnoses,
+          i,
+          maxIterations,
+          screenshotDescs.length > 0 ? screenshotDescs : undefined,
+        );
+      }
+    } else if (behavioral.length > 0) {
+      // Fallback: template-based senior nudge
+      nudge = buildSeniorNudgeFallback(
+        behavioral,
+        projectWarnings,
+        diagnoses,
+        i,
+        maxIterations,
+        screenshotDescs.length > 0 ? screenshotDescs : undefined,
+      );
+    } else if (diagnoses.length > 0) {
+      // Fallback: contextual nudge with diagnosis
+      nudge = buildContextualNudge(
+        i,
+        maxIterations,
+        diagnoses,
+        prevObs
+          ? { changedFiles: prevObs.changedFiles, diffMatchResult: prevObs.diffMatchResult }
+          : null,
+      );
+    } else {
+      nudge = buildNudge(i, maxIterations, enriched);
+    }
     tmuxSendKeys(params.tmuxTarget, nudge);
 
-    // Wait for Claude to finish
-    const idle = await pollForTmuxIdle(params.tmuxTarget, { timeoutMs: claudeTimeoutMs });
-    if (!idle) {
+    // === WAIT: Claude works on fix (detect idle vs plan-mode) ===
+    const claudeState = await pollForClaudeState(params.tmuxTarget, {
+      timeoutMs: claudeTimeoutMs,
+    });
+    if (claudeState.timedOut) {
       params.onProgress?.(`Claude didn't finish within timeout. Stopping.`);
       return {
         ok: false,
@@ -325,11 +569,96 @@ export async function runVoiceQaLoop(params: VoiceQaLoopParams): Promise<VoiceQa
         lastReport,
         lastResults,
         lastMultiTurnResult,
+        iterationHistory,
       };
+    }
+
+    // If Claude is in plan-mode, review the plan before waiting for implementation
+    if (claudeState.state === "plan-mode") {
+      params.onProgress?.(`Claude is in plan mode — reviewing plan...`);
+      if (params.agentDiagnose) {
+        try {
+          const planWarnings = matchProjectKnowledge(claudeState.planContent);
+          const allWarnings = [
+            ...projectWarnings,
+            ...planWarnings.filter((w) => !projectWarnings.some((pw) => pw.id === w.id)),
+          ];
+          const reviewPrompt = buildPlanReviewPrompt(
+            claudeState.planContent,
+            behavioral,
+            allWarnings,
+          );
+          const review = await params.agentDiagnose(reviewPrompt);
+          const reviewText = review.trim().slice(0, 500);
+          tmuxSendKeys(params.tmuxTarget, `Quick note on your plan: ${reviewText}`);
+          params.onProgress?.(`Sent plan review feedback to Claude`);
+        } catch (err: unknown) {
+          params.onProgress?.(`Plan review failed (non-fatal): ${String(err)}`);
+          // Fallback: scan plan against project knowledge
+          const planWarnings = matchProjectKnowledge(claudeState.planContent);
+          if (planWarnings.length > 0) {
+            const warnText = planWarnings.map((w) => w.warning.split(".")[0]).join(". ");
+            tmuxSendKeys(
+              params.tmuxTarget,
+              `Heads up on your plan: ${warnText}. Keep these in mind.`,
+            );
+          }
+        }
+      } else {
+        // No LLM: scan plan against project knowledge as best-effort
+        const planWarnings = matchProjectKnowledge(claudeState.planContent);
+        if (planWarnings.length > 0) {
+          const warnText = planWarnings.map((w) => w.warning.split(".")[0]).join(". ");
+          tmuxSendKeys(
+            params.tmuxTarget,
+            `Heads up on your plan: ${warnText}. Keep these in mind.`,
+          );
+        }
+      }
+
+      // Continue waiting for implementation to complete
+      const implState = await pollForClaudeState(params.tmuxTarget, {
+        timeoutMs: claudeTimeoutMs,
+        graceMs: 5_000,
+      });
+      if (implState.timedOut) {
+        params.onProgress?.(`Claude didn't finish implementation within timeout. Stopping.`);
+        return {
+          ok: false,
+          iterations: i,
+          stopReason: "claude-timeout",
+          lastReport,
+          lastResults,
+          lastMultiTurnResult,
+          iterationHistory,
+        };
+      }
     }
 
     // Grace period — let file writes settle
     await new Promise((resolve) => setTimeout(resolve, 5_000));
+
+    // === OBSERVE: capture what Claude actually did ===
+    params.onProgress?.(`Observing Claude's changes (iteration ${i})...`);
+    const observation = observeIteration(params.targetCwd, params.tmuxTarget, diagnoses);
+
+    if (observation.changedFiles.length > 0) {
+      params.onProgress?.(
+        `Claude changed ${observation.changedFiles.length} file(s): ${observation.changedFiles.slice(0, 3).join(", ")}${observation.changedFiles.length > 3 ? "..." : ""}. Diff match: ${observation.diffMatchResult}`,
+      );
+    } else {
+      params.onProgress?.(`Claude made no detectable changes.`);
+    }
+
+    iterationHistory.push({
+      iteration: i,
+      diagnoses,
+      behavioral,
+      projectWarnings,
+      nudgeSent: nudge,
+      observation,
+      passed: false,
+    });
   }
 
   // Max iterations exhausted
@@ -341,5 +670,68 @@ export async function runVoiceQaLoop(params: VoiceQaLoopParams): Promise<VoiceQa
     lastReport,
     lastResults,
     lastMultiTurnResult,
+    iterationHistory,
   };
+}
+
+// ---------------------------------------------------------------------------
+// Copilot worker stage wrapper
+// ---------------------------------------------------------------------------
+
+/**
+ * Voice QA stage for the copilot worker pipeline.
+ * Wraps `runVoiceQaLoop` as a `StageResult` for integration with `worker.ts`.
+ */
+export async function runVoiceQaLoopStage(params: {
+  cwd: string;
+  appUrl: string;
+  targetCwd?: string;
+  tmuxTarget?: string;
+  script?: StudentScript;
+  sourceFiles?: string[];
+  agentDiagnose?: (prompt: string) => Promise<string>;
+  authToken?: string;
+  visualQa?: VisualQaConfig;
+  maxIterations?: number;
+}): Promise<StageResult> {
+  const start = Date.now();
+  try {
+    const chromePath = resolveChromePath();
+    if (!chromePath) {
+      return {
+        stage: "voice-qa",
+        passed: false,
+        durationMs: Date.now() - start,
+        error: "Chrome not found",
+      };
+    }
+
+    const result = await runVoiceQaLoop({
+      appUrl: params.appUrl,
+      chromePath,
+      cwd: params.cwd,
+      targetCwd: params.targetCwd ?? params.cwd,
+      tmuxTarget: params.tmuxTarget ?? "scratchpad:0.0",
+      script: params.script ?? ELEMENTARY_MATH_SCRIPT,
+      sourceFiles: params.sourceFiles,
+      agentDiagnose: params.agentDiagnose,
+      authToken: params.authToken,
+      visualQa: params.visualQa,
+      maxIterations: params.maxIterations,
+      onProgress: (msg) => process.stderr.write(`[voice-qa-loop] ${msg}\n`),
+    });
+
+    if (result.ok) {
+      return { stage: "voice-qa", passed: true, durationMs: Date.now() - start };
+    }
+
+    const error = [
+      `Voice QA TAO loop: ${result.stopReason} after ${result.iterations} iteration(s)`,
+      result.lastReport,
+    ].join("\n");
+
+    return { stage: "voice-qa", passed: false, durationMs: Date.now() - start, error };
+  } catch (err) {
+    return { stage: "voice-qa", passed: false, durationMs: Date.now() - start, error: String(err) };
+  }
 }
