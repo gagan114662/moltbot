@@ -11,15 +11,19 @@ import {
   buildContextualNudge,
   buildDiagnosisNudge,
   buildLlmDiagnosisPrompt,
+  buildOneShotAnalysisPrompt,
   buildPlanReviewPrompt,
   buildSeniorNudgeFallback,
   buildSeniorNudgePrompt,
   diagnose,
   enrichWsEventsFromConsole,
+  extractAutoScribeStatus,
+  formatAutoScribeStatus,
   formatDiagnosisReport,
   matchProjectKnowledge,
   mergeDiagnoses,
   parseLlmDiagnosis,
+  parseOneShotResponse,
 } from "./voice-qa-diagnosis.js";
 
 // ---------------------------------------------------------------------------
@@ -652,6 +656,46 @@ describe("mergeDiagnoses", () => {
     expect(merged).toHaveLength(1);
     expect(merged[0].id).toBe("ws-1011-generic");
   });
+
+  it("suppresses INFO fallback when specific LLM diagnoses exist", () => {
+    const infoDiag: Diagnosis = {
+      id: "no-tutor-response-generic",
+      severity: "info",
+      rootCause: "Unknown cause",
+      explanation: "No specific root cause identified",
+      suggestedFix: "Check logs",
+      evidence: [],
+      count: 1,
+    };
+    const llmDiag: Diagnosis = {
+      id: "llm-session-config-wrong",
+      severity: "major",
+      rootCause: "Session config missing tools array",
+      explanation: "The tools are not registered in the session",
+      suggestedFix: "Add tools to live.connect config",
+      evidence: [],
+      count: 1,
+    };
+    const merged = mergeDiagnoses([infoDiag], [llmDiag]);
+    expect(merged.find((d) => d.id === "no-tutor-response-generic")).toBeUndefined();
+    expect(merged).toHaveLength(1);
+    expect(merged[0].id).toBe("llm-session-config-wrong");
+  });
+
+  it("keeps INFO fallback when no specific diagnoses exist", () => {
+    const infoDiag: Diagnosis = {
+      id: "no-tutor-response-generic",
+      severity: "info",
+      rootCause: "Unknown cause",
+      explanation: "No specific root cause identified",
+      suggestedFix: "Check logs",
+      evidence: [],
+      count: 1,
+    };
+    const merged = mergeDiagnoses([infoDiag], []);
+    expect(merged).toHaveLength(1);
+    expect(merged[0].id).toBe("no-tutor-response-generic");
+  });
 });
 
 // ---------------------------------------------------------------------------
@@ -889,6 +933,63 @@ describe("buildBehavioralObservations", () => {
     expect(disconn!.severity).toBe("critical");
   });
 
+  it("detects total silence (zero responses across all turns)", () => {
+    const results = [
+      makeResult({ passed: false, tutorResponse: undefined }),
+      makeResult({ passed: false, tutorResponse: undefined }),
+      makeResult({ passed: false, tutorResponse: undefined }),
+      makeResult({ passed: false, tutorResponse: undefined }),
+    ];
+    const obs = buildBehavioralObservations(results);
+    const silence = obs.find((o) => o.observation.includes("completely silent"));
+    expect(silence).toBeDefined();
+    expect(silence!.severity).toBe("critical");
+    expect(silence!.observation).toContain("4 questions");
+    expect(silence!.observation).toContain("zero responses");
+  });
+
+  it("does not fire total silence when at least one response exists", () => {
+    const results = [
+      makeResult({ passed: true, tutorResponse: "Hello!" }),
+      makeResult({ passed: false, tutorResponse: undefined }),
+    ];
+    const obs = buildBehavioralObservations(results);
+    expect(obs.find((o) => o.observation.includes("completely silent"))).toBeUndefined();
+  });
+
+  it("detects slow response latency (> 5s)", () => {
+    const results = [
+      makeResult({
+        passed: true,
+        tutorResponse: "Four!",
+        responseLatencyMs: 8000,
+      } as Partial<EnrichedVoiceQaResult>),
+      makeResult({
+        passed: true,
+        tutorResponse: "Sure thing!",
+        responseLatencyMs: 6500,
+      } as Partial<EnrichedVoiceQaResult>),
+    ];
+    const obs = buildBehavioralObservations(results);
+    const slow = obs.find((o) => o.observation.includes("slow to respond"));
+    expect(slow).toBeDefined();
+    expect(slow!.severity).toBe("major");
+    expect(slow!.observation).toContain("2 turn(s)");
+    expect(slow!.evidence).toHaveLength(2);
+  });
+
+  it("does not fire slow latency when all responses are fast", () => {
+    const results = [
+      makeResult({
+        passed: true,
+        tutorResponse: "Four!",
+        responseLatencyMs: 2000,
+      } as Partial<EnrichedVoiceQaResult>),
+    ];
+    const obs = buildBehavioralObservations(results);
+    expect(obs.find((o) => o.observation.includes("slow to respond"))).toBeUndefined();
+  });
+
   it("returns empty array when everything is fine", () => {
     const results = [
       makeResult({
@@ -1082,5 +1183,443 @@ describe("buildPlanReviewPrompt", () => {
     const prompt = buildPlanReviewPrompt("My plan", obs, []);
     expect(prompt).toContain("What Voice QA Observed");
     expect(prompt).toContain("never drew on scratchpad");
+  });
+});
+
+// ---------------------------------------------------------------------------
+// buildOneShotAnalysisPrompt
+// ---------------------------------------------------------------------------
+
+describe("buildOneShotAnalysisPrompt", () => {
+  it("includes behavioral observations and screenshot instructions", () => {
+    const results = [
+      makeResult({
+        screenshotPath: "/tmp/shot.png",
+        screenshots: { before: "/tmp/before.png", after: "/tmp/after.png" },
+      }),
+    ];
+    const behavioral = [
+      {
+        category: "conversation-flow" as const,
+        severity: "critical" as const,
+        observation: "Adam was completely silent.",
+        evidence: ["0 responses"],
+      },
+    ];
+    const prompt = buildOneShotAnalysisPrompt(
+      results,
+      behavioral,
+      [],
+      [],
+      undefined,
+      undefined,
+      1,
+      3,
+    );
+    expect(prompt).toContain("=== NUDGE ===");
+    expect(prompt).toContain("=== DIAGNOSIS ===");
+    expect(prompt).toContain("Adam was completely silent");
+    expect(prompt).toContain("Screenshots");
+    expect(prompt).toContain("Sal Khan");
+    expect(prompt).toContain("Iteration 1/3");
+  });
+
+  it("includes source code when provided", () => {
+    const prompt = buildOneShotAnalysisPrompt(
+      [makeResult({})],
+      [],
+      [],
+      [],
+      [{ path: "src/App.tsx", content: "1: const App = () => {}" }],
+    );
+    expect(prompt).toContain("Source Code");
+    expect(prompt).toContain("src/App.tsx");
+    expect(prompt).toContain("const App");
+  });
+
+  it("includes iteration history when provided", () => {
+    const history: IterationContext[] = [
+      {
+        iteration: 1,
+        nudgeSent: "Fix the WS crash",
+        diffStat: "1 file changed",
+        changedFiles: ["tutor-service.ts"],
+        tmuxScrollbackTail: "Working on fix...",
+        diffMatchResult: "partial",
+        previousDiagnoses: ["WS crash"],
+      },
+    ];
+    const prompt = buildOneShotAnalysisPrompt([makeResult({})], [], [], [], undefined, history);
+    expect(prompt).toContain("Previous Attempts");
+    expect(prompt).toContain("tutor-service.ts");
+    expect(prompt).toContain("partial");
+  });
+
+  it("includes canvas change info in test results", () => {
+    const results = [
+      makeResult({
+        canvasChange: { checksumBefore: "abc123", checksumAfter: "abc123", changed: false },
+        toolCalls: ["draw_annotation"],
+      }),
+    ];
+    const prompt = buildOneShotAnalysisPrompt(results, [], [], []);
+    expect(prompt).toContain("UNCHANGED");
+    expect(prompt).toContain("draw_annotation");
+  });
+
+  it("includes WS events in test results", () => {
+    const results = [
+      makeResult({
+        wsEvents: [
+          makeWsEvent({ type: "open", url: "wss://gemini.example.com" }),
+          makeWsEvent({ type: "close", closeCode: 1011 }),
+        ],
+      }),
+    ];
+    const prompt = buildOneShotAnalysisPrompt(results, [], [], []);
+    expect(prompt).toContain("WS events");
+    expect(prompt).toContain("OPEN");
+    expect(prompt).toContain("CLOSE");
+  });
+
+  it("includes pedagogy rubric section", () => {
+    const prompt = buildOneShotAnalysisPrompt([makeResult({})], [], [], []);
+    expect(prompt).toContain("Pedagogical Quality");
+    expect(prompt).toContain("step-by-step");
+    expect(prompt).toContain("scratchpad");
+  });
+});
+
+// ---------------------------------------------------------------------------
+// parseOneShotResponse
+// ---------------------------------------------------------------------------
+
+describe("parseOneShotResponse", () => {
+  it("splits response on both markers correctly", () => {
+    const response = `Some preamble
+
+=== NUDGE ===
+Hey — I watched the session. Adam was silent. The WebSocket dropped after 1 second. Fix tutor-service.ts:276 and say done.
+
+=== DIAGNOSIS ===
+[{"severity":"critical","rootCause":"WS drops after setup","explanation":"Connection closes within 1s","suggestedFix":"--- a/tutor-service.ts\\n+++ b/tutor-service.ts","evidence":["WS CLOSE at 1s"]}]`;
+
+    const result = parseOneShotResponse(response);
+    expect(result.nudge).toContain("Adam was silent");
+    expect(result.nudge).toContain("tutor-service.ts:276");
+    expect(result.diagnoses).toHaveLength(1);
+    expect(result.diagnoses[0].rootCause).toBe("WS drops after setup");
+    expect(result.diagnoses[0].severity).toBe("critical");
+  });
+
+  it("handles only NUDGE marker", () => {
+    const response = `=== NUDGE ===
+Fix the connection issue — the WebSocket drops immediately.`;
+
+    const result = parseOneShotResponse(response);
+    expect(result.nudge).toContain("Fix the connection issue");
+    expect(result.diagnoses).toHaveLength(0);
+  });
+
+  it("handles only DIAGNOSIS marker", () => {
+    const response = `Some text before
+
+=== DIAGNOSIS ===
+[{"severity":"major","rootCause":"Model name invalid","explanation":"Wrong model","suggestedFix":"Change model name","evidence":[]}]`;
+
+    const result = parseOneShotResponse(response);
+    expect(result.nudge).toContain("Some text before");
+    expect(result.diagnoses).toHaveLength(1);
+    expect(result.diagnoses[0].rootCause).toBe("Model name invalid");
+  });
+
+  it("handles no markers — returns full text as nudge if no JSON", () => {
+    const response = "The session failed because Adam never connected.";
+    const result = parseOneShotResponse(response);
+    expect(result.nudge).toBe("The session failed because Adam never connected.");
+    expect(result.diagnoses).toHaveLength(0);
+  });
+
+  it("handles no markers — parses JSON if present", () => {
+    const response =
+      '[{"severity":"minor","rootCause":"Slow response","explanation":"Latency issue","suggestedFix":"Optimize","evidence":[]}]';
+    const result = parseOneShotResponse(response);
+    expect(result.diagnoses).toHaveLength(1);
+    expect(result.diagnoses[0].rootCause).toBe("Slow response");
+  });
+
+  it("handles empty response", () => {
+    const result = parseOneShotResponse("");
+    expect(result.nudge).toBe("");
+    expect(result.diagnoses).toHaveLength(0);
+  });
+
+  it("handles malformed JSON in diagnosis section", () => {
+    const response = `=== NUDGE ===
+Fix it
+
+=== DIAGNOSIS ===
+[{broken json}]`;
+
+    const result = parseOneShotResponse(response);
+    expect(result.nudge).toBe("Fix it");
+    expect(result.diagnoses).toHaveLength(0);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// buildBehavioralObservations — canvas-unchanged
+// ---------------------------------------------------------------------------
+
+describe("buildBehavioralObservations — canvas-unchanged", () => {
+  it("detects canvas unchanged when draw tools called", () => {
+    const results = [
+      makeResult({
+        passed: false,
+        toolCalls: ["draw_annotation"],
+        canvasChange: { checksumBefore: "abc", checksumAfter: "abc", changed: false },
+      }),
+    ];
+    const obs = buildBehavioralObservations(results);
+    const canvasObs = obs.find((o) => o.observation.includes("canvas pixels didn't change"));
+    expect(canvasObs).toBeDefined();
+    expect(canvasObs!.severity).toBe("critical");
+  });
+
+  it("does not fire when canvas actually changed", () => {
+    const results = [
+      makeResult({
+        passed: false,
+        toolCalls: ["draw_annotation"],
+        canvasChange: { checksumBefore: "abc", checksumAfter: "def", changed: true },
+      }),
+    ];
+    const obs = buildBehavioralObservations(results);
+    expect(obs.find((o) => o.observation.includes("canvas pixels didn't change"))).toBeUndefined();
+  });
+
+  it("does not fire when no draw tools called", () => {
+    const results = [
+      makeResult({
+        passed: false,
+        toolCalls: ["get_context"],
+        canvasChange: { checksumBefore: "abc", checksumAfter: "abc", changed: false },
+      }),
+    ];
+    const obs = buildBehavioralObservations(results);
+    expect(obs.find((o) => o.observation.includes("canvas pixels didn't change"))).toBeUndefined();
+  });
+});
+
+// ---------------------------------------------------------------------------
+// extractAutoScribeStatus
+// ---------------------------------------------------------------------------
+
+describe("extractAutoScribeStatus", () => {
+  it("returns zero state for empty logs", () => {
+    const status = extractAutoScribeStatus([]);
+    expect(status.transcriptEvents).toBe(0);
+    expect(status.attempted).toBe(false);
+    expect(status.executed).toBe(0);
+    expect(status.filtered).toBe(false);
+    expect(status.error).toBeUndefined();
+    expect(status.skipped).toBe(false);
+  });
+
+  it("counts outputTranscript events", () => {
+    const logs = [
+      "[log] [AutoScribe] outputTranscript: hello",
+      "[log] [AutoScribe] outputTranscript: two plus two",
+      "[log] some other log",
+    ];
+    const status = extractAutoScribeStatus(logs);
+    expect(status.transcriptEvents).toBe(2);
+  });
+
+  it("detects successful execution", () => {
+    const logs = [
+      "[log] [AutoScribe] outputTranscript: three plus five",
+      "[log] [AutoScribe] Raw response: [{...}]",
+      "[log] [AutoScribe] Executing 2 commands",
+    ];
+    const status = extractAutoScribeStatus(logs);
+    expect(status.attempted).toBe(true);
+    expect(status.executed).toBe(2);
+    expect(status.filtered).toBe(false);
+  });
+
+  it("detects filtered commands", () => {
+    const logs = [
+      "[log] [AutoScribe] Raw response: [{...}]",
+      "[log] [AutoScribe] Filtering out non-math text: hello",
+      "[log] [AutoScribe] All commands filtered out",
+    ];
+    const status = extractAutoScribeStatus(logs);
+    expect(status.attempted).toBe(true);
+    expect(status.filtered).toBe(true);
+    expect(status.executed).toBe(0);
+  });
+
+  it("detects API error", () => {
+    const logs = ["[log] [AutoScribe] Error: 429 Too Many Requests"];
+    const status = extractAutoScribeStatus(logs);
+    expect(status.attempted).toBe(true);
+    expect(status.error).toContain("429");
+  });
+
+  it("detects skipped due to no math", () => {
+    const logs = ["[log] [AutoScribe] Skipping — no clear math in transcript"];
+    const status = extractAutoScribeStatus(logs);
+    expect(status.skipped).toBe(true);
+  });
+
+  it("detects fallback reason", () => {
+    const logs = ["[log] [AutoScribe] Fallback draw: missing-api-key some extra text"];
+    const status = extractAutoScribeStatus(logs);
+    expect(status.fallbackReason).toBe("missing-api-key");
+  });
+});
+
+// ---------------------------------------------------------------------------
+// formatAutoScribeStatus
+// ---------------------------------------------------------------------------
+
+describe("formatAutoScribeStatus", () => {
+  it("formats successful execution", () => {
+    const text = formatAutoScribeStatus({
+      transcriptEvents: 5,
+      attempted: true,
+      executed: 2,
+      filtered: false,
+      skipped: false,
+    });
+    expect(text).toContain("5 transcript events");
+    expect(text).toContain("executed 2 commands");
+  });
+
+  it("formats no activity", () => {
+    const text = formatAutoScribeStatus({
+      transcriptEvents: 0,
+      attempted: false,
+      executed: 0,
+      filtered: false,
+      skipped: false,
+    });
+    expect(text).toContain("0 transcript events");
+    expect(text).toContain("NOT triggered");
+  });
+
+  it("formats error", () => {
+    const text = formatAutoScribeStatus({
+      transcriptEvents: 3,
+      attempted: true,
+      executed: 0,
+      filtered: false,
+      skipped: false,
+      error: "429 quota exceeded",
+    });
+    expect(text).toContain("ERROR: 429");
+  });
+});
+
+// ---------------------------------------------------------------------------
+// Auto-scribe diagnosis rules
+// ---------------------------------------------------------------------------
+
+describe("diagnose — auto-scribe rules", () => {
+  it("detects no-output-transcript when no transcript events", () => {
+    const results = [
+      makeResult({
+        passed: false,
+        consoleLogs: [
+          "[log] [TutorService] Stripping tools — native audio",
+          "[log] some other log",
+        ],
+      }),
+    ];
+    const diagnoses = diagnose(results);
+    const found = diagnoses.find((d) => d.id === "no-output-transcript");
+    expect(found).toBeDefined();
+    expect(found!.severity).toBe("critical");
+  });
+
+  it("detects auto-scribe-api-error", () => {
+    const results = [
+      makeResult({
+        passed: false,
+        consoleLogs: [
+          "[log] [AutoScribe] outputTranscript: hello",
+          "[log] [AutoScribe] Error: 500 Internal Server Error",
+        ],
+      }),
+    ];
+    const diagnoses = diagnose(results);
+    const found = diagnoses.find((d) => d.id === "auto-scribe-api-error");
+    expect(found).toBeDefined();
+    expect(found!.severity).toBe("critical");
+  });
+
+  it("detects auto-scribe-all-filtered", () => {
+    const results = [
+      makeResult({
+        passed: false,
+        consoleLogs: [
+          "[log] [AutoScribe] outputTranscript: hey there",
+          "[log] [AutoScribe] Raw response: [...]",
+          "[log] [AutoScribe] Filtering out non-math text: hey",
+          "[log] [AutoScribe] All commands filtered out",
+        ],
+      }),
+    ];
+    const diagnoses = diagnose(results);
+    const found = diagnoses.find((d) => d.id === "auto-scribe-all-filtered");
+    expect(found).toBeDefined();
+    expect(found!.severity).toBe("major");
+  });
+
+  it("detects auto-scribe-ok-canvas-unchanged", () => {
+    const results = [
+      makeResult({
+        passed: false,
+        consoleLogs: [
+          "[log] [AutoScribe] outputTranscript: two plus two",
+          "[log] [AutoScribe] Executing 2 commands",
+        ],
+        canvasChange: { checksumBefore: "aaa", checksumAfter: "aaa", changed: false },
+      }),
+    ];
+    const diagnoses = diagnose(results);
+    const found = diagnoses.find((d) => d.id === "auto-scribe-ok-canvas-unchanged");
+    expect(found).toBeDefined();
+    expect(found!.severity).toBe("critical");
+  });
+});
+
+// ---------------------------------------------------------------------------
+// buildOneShotAnalysisPrompt — auto-scribe section
+// ---------------------------------------------------------------------------
+
+describe("buildOneShotAnalysisPrompt — auto-scribe", () => {
+  it("includes auto-scribe pipeline status when AutoScribe logs present", () => {
+    const results = [
+      makeResult({
+        passed: false,
+        consoleLogs: [
+          "[log] [AutoScribe] outputTranscript: two plus two",
+          "[log] [AutoScribe] Executing 1 commands",
+        ],
+        canvasChange: { checksumBefore: "aaa", checksumAfter: "bbb", changed: true },
+      }),
+    ];
+    const prompt = buildOneShotAnalysisPrompt(results, [], [], []);
+    expect(prompt).toContain("Auto-Scribe Pipeline Status");
+    expect(prompt).toContain("transcript events");
+  });
+
+  it("includes auto-scribe fallback layer in root cause analysis", () => {
+    const results = [makeResult({ passed: false })];
+    const prompt = buildOneShotAnalysisPrompt(results, [], [], []);
+    expect(prompt).toContain("Auto-scribe fallback");
+    expect(prompt).toContain("outputTranscription");
   });
 });

@@ -6,7 +6,12 @@
  * Produces actionable root-cause diagnoses instead of generic "tutor did not respond".
  */
 
-import { isGreetingResponse, type VoiceQaResult } from "./voice-qa.js";
+import {
+  isGreetingResponse,
+  type CanvasChangeInfo,
+  type ScreenshotSet,
+  type VoiceQaResult,
+} from "./voice-qa.js";
 
 // ---------------------------------------------------------------------------
 // Types
@@ -23,6 +28,26 @@ export type Diagnosis = {
   evidence: string[];
   /** How many results triggered this same diagnosis (for dedup). */
   count: number;
+};
+
+/** Structured Khan Academy quality scorecard from one-shot analysis. */
+export type ExperienceScorecard = {
+  /** Overall quality 1-10 (Khan Academy standard). */
+  overall: number;
+  /** Visual clarity: layout, colors, spacing, readability (1-5). */
+  visualClarity: number;
+  /** Teaching effectiveness: step-by-step, builds understanding (1-5). */
+  teachingEffectiveness: number;
+  /** Scratchpad usage: relevant drawings, clears before redraw (1-5). */
+  scratchpadUsage: number;
+  /** Conversation flow: warm, encouraging, responsive (1-5). */
+  conversationFlow: number;
+  /** Age appropriateness: 3rd grader would understand (1-5). */
+  ageAppropriateness: number;
+  /** Specific aesthetic issues spotted. */
+  aestheticNotes: string[];
+  /** Direct comparison to what Khan Academy would do. */
+  khanComparison: string;
 };
 
 export type WsEvent = {
@@ -43,7 +68,131 @@ export type EnrichedVoiceQaResult = VoiceQaResult & {
   visualAssessment?: import("./voice-qa.js").VisualAssessment;
   /** Frontend health snapshot from Playwright DOM inspection. */
   pageHealth?: import("./types.js").PageHealthReport;
+  /** Response latency in ms (prompt end → first tutor response). */
+  responseLatencyMs?: number;
+  /** Before/after screenshots for multimodal analysis. */
+  screenshots?: ScreenshotSet;
+  /** Canvas pixel checksum change detection. */
+  canvasChange?: CanvasChangeInfo;
 };
+
+/** Auto-scribe pipeline status extracted from console logs. */
+export type AutoScribeStatus = {
+  /** Count of [AutoScribe] outputTranscript: events. */
+  transcriptEvents: number;
+  /** Whether auto-scribe attempted a Gemini Flash API call. */
+  attempted: boolean;
+  /** Number of commands executed (from "Executing N commands"). */
+  executed: number;
+  /** Whether all commands were filtered out. */
+  filtered: boolean;
+  /** Error message if auto-scribe crashed. */
+  error?: string;
+  /** Fallback reason (e.g. "no-math-transcript", "missing-api-key"). */
+  fallbackReason?: string;
+  /** Whether auto-scribe skipped due to "no clear math". */
+  skipped: boolean;
+  /** Specific filter reasons (e.g. "too-long", "non-math", "duplicate"). */
+  filterReasons?: string[];
+};
+
+/** Extract auto-scribe pipeline status from Playwright-captured console logs. */
+export function extractAutoScribeStatus(consoleLogs: string[]): AutoScribeStatus {
+  let transcriptEvents = 0;
+  let attempted = false;
+  let executed = 0;
+  let filtered = false;
+  let error: string | undefined;
+  let fallbackReason: string | undefined;
+  let skipped = false;
+  const filterReasons: string[] = [];
+
+  for (const log of consoleLogs) {
+    if (log.includes("[AutoScribe] outputTranscript:")) {
+      transcriptEvents++;
+    }
+    if (log.includes("[AutoScribe] Raw response:")) {
+      attempted = true;
+    }
+    const execMatch = log.match(/\[AutoScribe\] Executing (\d+) commands/);
+    if (execMatch) {
+      attempted = true;
+      executed += parseInt(execMatch[1], 10);
+    }
+    if (log.includes("[AutoScribe] All commands filtered out")) {
+      filtered = true;
+      attempted = true;
+      filterReasons.push("all-filtered");
+    }
+    if (log.includes("[AutoScribe] Filtering out long text:")) {
+      filtered = true;
+      attempted = true;
+      filterReasons.push("too-long");
+    }
+    if (log.includes("[AutoScribe] Filtering out non-math text:")) {
+      filtered = true;
+      attempted = true;
+      filterReasons.push("non-math");
+    }
+    if (log.includes("[AutoScribe] Filtering out duplicate:")) {
+      filtered = true;
+      attempted = true;
+      filterReasons.push("duplicate");
+    }
+    if (log.includes("[AutoScribe] Immediate fallback")) {
+      fallbackReason = "no-math-transcript";
+    }
+    const errorMatch = log.match(/\[AutoScribe\] Error:\s*(.+)/);
+    if (errorMatch) {
+      error = errorMatch[1].slice(0, 200);
+      attempted = true;
+    }
+    const fallbackMatch = log.match(/\[AutoScribe\] Fallback draw:\s*(\S+)/);
+    if (fallbackMatch) {
+      fallbackReason = fallbackMatch[1];
+    }
+    if (log.includes("[AutoScribe] Skipping")) {
+      skipped = true;
+    }
+  }
+
+  return {
+    transcriptEvents,
+    attempted,
+    executed,
+    filtered,
+    error,
+    fallbackReason,
+    skipped,
+    filterReasons: filterReasons.length > 0 ? filterReasons : undefined,
+  };
+}
+
+/** Format auto-scribe status as a human-readable summary line. */
+export function formatAutoScribeStatus(status: AutoScribeStatus): string {
+  const parts: string[] = [];
+  parts.push(`${status.transcriptEvents} transcript events`);
+  if (!status.attempted && !status.skipped) {
+    parts.push("auto-scribe NOT triggered");
+  } else if (status.skipped) {
+    parts.push("skipped (no math detected)");
+  } else if (status.error) {
+    parts.push(`ERROR: ${status.error}`);
+  } else if (status.filtered) {
+    const reasons = status.filterReasons
+      ? ` (reasons: ${[...new Set(status.filterReasons)].join(", ")})`
+      : "";
+    parts.push(`all commands filtered out${reasons}`);
+  } else if (status.executed > 0) {
+    parts.push(`executed ${status.executed} commands`);
+  } else {
+    parts.push("attempted but 0 commands");
+  }
+  if (status.fallbackReason) {
+    parts.push(`fallback: ${status.fallbackReason}`);
+  }
+  return parts.join(" → ");
+}
 
 // ---------------------------------------------------------------------------
 // Knowledge Base
@@ -451,6 +600,161 @@ const KNOWLEDGE_BASE: DiagnosisRule[] = [
     },
   },
 
+  // --- VISUAL QUALITY ---
+  {
+    id: "canvas-overwriting",
+    severity: "major",
+    rootCause: "Canvas content overwriting previous drawings",
+    explanation:
+      "New content is being drawn on top of existing content without clearing first. " +
+      "This makes the scratchpad unreadable — overlapping text and shapes become a mess. " +
+      "The canvas should be cleared (or a new region used) before drawing the next step.",
+    suggestedFix:
+      "Call clear_canvas before drawing new content for a different problem, or " +
+      "use write_step with incrementing y-coordinates to avoid overlap. " +
+      "In useScratchpadAI.ts, track the last drawn y-position and offset new content.",
+    match(result) {
+      const evidence: string[] = [];
+      // Canvas changed but visual assessment says content is overlapping/unreadable
+      if (result.canvasChange?.changed && result.visualAssessment) {
+        for (const issue of result.visualAssessment.issues) {
+          if (/overlap|overwrite|unreadable|on top/i.test(issue.description)) {
+            evidence.push(`Visual: ${issue.description}`);
+          }
+        }
+        // Also flag if score is low and canvas changed (likely overwriting)
+        if (result.visualAssessment.score < 30 && evidence.length === 0) {
+          evidence.push(
+            `Canvas changed (${result.canvasChange.checksumBefore} → ${result.canvasChange.checksumAfter}) but visual score is ${result.visualAssessment.score}/100`,
+          );
+        }
+      }
+      return evidence;
+    },
+  },
+  {
+    id: "irrelevant-drawing",
+    severity: "major",
+    rootCause: "Drawing doesn't match the math topic",
+    explanation:
+      "The tutor drew something that doesn't relate to what's being discussed. " +
+      "Random shapes, circles, or decorative elements distract from the lesson. " +
+      "Every drawing should directly support the mathematical concept being taught.",
+    suggestedFix:
+      "In the system prompt (ai_tutor_system_prompt.md), explicitly instruct: " +
+      "'Only draw content that directly illustrates the math concept. No decorative shapes.' " +
+      "Check tool call arguments match the current topic.",
+    match(result) {
+      const evidence: string[] = [];
+      if (result.visualAssessment) {
+        for (const issue of result.visualAssessment.issues) {
+          if (/irrelevant|random|decorat|unrelated|doesn't match/i.test(issue.description)) {
+            evidence.push(`Visual: ${issue.description}`);
+          }
+        }
+        // Pedagogy score: low drawing relevance
+        if (
+          result.visualAssessment.pedagogyScore &&
+          result.visualAssessment.pedagogyScore.drawingRelevance <= 2
+        ) {
+          evidence.push(
+            `Pedagogy: drawing relevance score ${result.visualAssessment.pedagogyScore.drawingRelevance}/5`,
+          );
+        }
+      }
+      return evidence;
+    },
+  },
+
+  // --- AUTO-SCRIBE (native audio model fallback rendering) ---
+  {
+    id: "no-output-transcript",
+    severity: "critical",
+    rootCause: "No outputTranscription events — auto-scribe has nothing to work with",
+    explanation:
+      "The Gemini native audio model is not emitting outputTranscription events. " +
+      "Without transcript text, auto-scribe cannot extract math to render on the canvas. " +
+      "Check that `outputAudioTranscription: { enable: true }` is in the LiveConnectConfig.",
+    suggestedFix:
+      "In tutor-service.ts, ensure `fullConfig.outputAudioTranscription = { enable: true }` " +
+      "is set BEFORE connecting. Verify in console logs that [TutorService] shows the config key.",
+    match(_result, allResults) {
+      const allLogs = allResults.flatMap((r) => r.consoleLogs);
+      const status = extractAutoScribeStatus(allLogs);
+      if (status.transcriptEvents === 0 && allLogs.length > 0) {
+        return [
+          `0 outputTranscript events across ${allResults.length} turn(s) — model is silent or transcript disabled`,
+        ];
+      }
+      return [];
+    },
+  },
+  {
+    id: "auto-scribe-api-error",
+    severity: "critical",
+    rootCause: "Auto-scribe Gemini Flash API call failed",
+    explanation:
+      "Auto-scribe attempted to call Gemini Flash to extract math from Adam's speech, " +
+      "but the API call threw an error. Check VITE_GEMINI_API_KEY and API quota.",
+    suggestedFix:
+      "Verify VITE_GEMINI_API_KEY in .env.local is valid and not rate-limited. " +
+      "Check the browser console for the specific error message.",
+    match(_result, allResults) {
+      const allLogs = allResults.flatMap((r) => r.consoleLogs);
+      const status = extractAutoScribeStatus(allLogs);
+      if (status.error) {
+        return [`Auto-scribe error: ${status.error}`];
+      }
+      return [];
+    },
+  },
+  {
+    id: "auto-scribe-all-filtered",
+    severity: "major",
+    rootCause: "Auto-scribe commands filtered out by post-processing",
+    explanation:
+      "Auto-scribe received a response from Gemini Flash but all commands were removed by " +
+      "the post-filter (hasMathHints check, 40-char limit, or duplicate detection).",
+    suggestedFix:
+      "In useScratchpadAI.ts, review the post-filter in runAutoScribe. The hasMathHints regex " +
+      "or 40-char limit may be too aggressive. Check [AutoScribe] console logs for 'Filtering out' details.",
+    match(_result, allResults) {
+      const allLogs = allResults.flatMap((r) => r.consoleLogs);
+      const status = extractAutoScribeStatus(allLogs);
+      if (status.filtered && status.executed === 0) {
+        return ["Auto-scribe API returned commands but all were filtered out"];
+      }
+      return [];
+    },
+  },
+  {
+    id: "auto-scribe-ok-canvas-unchanged",
+    severity: "critical",
+    rootCause: "Auto-scribe executed commands but canvas stayed blank",
+    explanation:
+      "Auto-scribe successfully extracted math and sent commands to the OverlayAnimator, " +
+      "but the canvas pixel checksum didn't change. The canvas rendering pipeline is broken — " +
+      "most likely the OverlayAnimator's attach() captured canvas.width/height as 0 (CSS-sized " +
+      "canvas without explicit HTML width/height attributes), so all drawing goes to an invisible 0x0 surface.",
+    suggestedFix:
+      "In canvas-renderer.ts attach(), the bug is: `this.width = canvas.width; this.height = canvas.height;` — " +
+      "these read the HTML attributes, not the CSS size. If the canvas uses CSS sizing (width:100%), the HTML " +
+      "attributes default to 0. Fix: use canvas.getBoundingClientRect() or ensure the canvas element has explicit " +
+      "width/height attributes set before attach() is called. Also check ScratchpadAIOverlay.tsx — the overlay " +
+      "canvas must have width/height attributes matching its CSS size.",
+    match(result, allResults) {
+      const allLogs = allResults.flatMap((r) => r.consoleLogs);
+      const status = extractAutoScribeStatus(allLogs);
+      if (status.executed > 0 && result.canvasChange && !result.canvasChange.changed) {
+        return [
+          `Auto-scribe executed ${status.executed} commands but canvas checksum unchanged ` +
+            `(${result.canvasChange.checksumBefore} → ${result.canvasChange.checksumAfter})`,
+        ];
+      }
+      return [];
+    },
+  },
+
   // --- INFO (fallback) ---
   {
     id: "no-tutor-response-generic",
@@ -668,6 +972,10 @@ export type IterationContext = {
   tmuxScrollbackTail: string;
   diffMatchResult: string;
   previousDiagnoses: string[];
+  /** Truncated unified diff of what the agent actually changed. */
+  diffSnippet?: string;
+  /** Whether the agent's changes compiled successfully. */
+  compileOk?: boolean;
 };
 
 /** Build a rich prompt for an LLM to diagnose voice QA failures.
@@ -964,8 +1272,16 @@ export function mergeDiagnoses(staticDiags: Diagnosis[], llmDiags: Diagnosis[]):
     }
   }
 
+  // Suppress generic fallback when any specific diagnosis exists
+  const hasSpecific = merged.some(
+    (d) => d.id !== "no-tutor-response-generic" && d.severity !== "info",
+  );
+  const filtered = hasSpecific
+    ? merged.filter((d) => d.id !== "no-tutor-response-generic")
+    : merged;
+
   // Re-sort by severity
-  return merged.toSorted((a, b) => {
+  return filtered.toSorted((a, b) => {
     const sevDiff = SEVERITY_ORDER[a.severity] - SEVERITY_ORDER[b.severity];
     if (sevDiff !== 0) {
       return sevDiff;
@@ -1050,6 +1366,18 @@ export function buildBehavioralObservations(
   const obs: BehavioralObservation[] = [];
   const allToolCalls = results.flatMap((r) => r.toolCalls ?? []);
   const hasAnyDrawTools = allToolCalls.some((t) => DRAW_TOOL_NAMES.has(t));
+  const respondedTurns = results.filter((r) => r.tutorResponse);
+  const silentTurns = results.filter((r) => !r.tutorResponse);
+
+  // 0. Total silence — no tutor response at all across ALL turns
+  if (results.length > 0 && respondedTurns.length === 0) {
+    obs.push({
+      category: "conversation-flow",
+      severity: "critical",
+      observation: `Adam was completely silent — ${results.length} questions from Maya, zero responses. The tutor never engaged at all.`,
+      evidence: [`${results.length} turns, 0 responses`],
+    });
+  }
 
   // 1. "Says but doesn't do" — tutor talks about drawing but never calls tools
   for (const r of results) {
@@ -1066,8 +1394,6 @@ export function buildBehavioralObservations(
   }
 
   // 2. Conversation death — turn N responded, N+1..end silent
-  const respondedTurns = results.filter((r) => r.tutorResponse);
-  const silentTurns = results.filter((r) => !r.tutorResponse);
   if (respondedTurns.length > 0 && silentTurns.length > 0 && results.length > 1) {
     const lastRespondedIdx = results.findLastIndex((r) => r.tutorResponse);
     const trailingSlience = results.length - 1 - lastRespondedIdx;
@@ -1126,7 +1452,46 @@ export function buildBehavioralObservations(
     });
   }
 
-  // 6-8. Frontend health observations (from page health reports)
+  // 5b. Canvas pixels unchanged despite draw tool calls (checksum-based)
+  const canvasUnchanged = results.some(
+    (r) =>
+      r.canvasChange &&
+      !r.canvasChange.changed &&
+      (r.toolCalls ?? []).some((t) => DRAW_TOOL_NAMES.has(t)),
+  );
+  if (canvasUnchanged && !anyVisualBlank) {
+    obs.push({
+      category: "tool-gap",
+      severity: "critical",
+      observation:
+        "Adam called drawing tools but the canvas pixels didn't change — the drawing pipeline is broken. The tool handler may not be wiring into the overlay animator.",
+      evidence: [
+        `Draw tools called: ${allToolCalls.filter((t) => DRAW_TOOL_NAMES.has(t)).join(", ")}`,
+        `Canvas checksum: unchanged`,
+      ],
+    });
+  }
+
+  // 6. Response latency — sluggish tutor makes the conversation feel unnatural
+  const slowTurns = results.filter(
+    (r) => r.responseLatencyMs !== undefined && r.responseLatencyMs > 5000,
+  );
+  if (slowTurns.length > 0) {
+    const avgLatency = Math.round(
+      slowTurns.reduce((sum, r) => sum + r.responseLatencyMs!, 0) / slowTurns.length / 1000,
+    );
+    obs.push({
+      category: "conversation-flow",
+      severity: "major",
+      observation: `Adam is slow to respond — ${slowTurns.length} turn(s) took over 5 seconds (avg ${avgLatency}s). The conversation feels unnatural and stilted.`,
+      evidence: slowTurns.map(
+        (r) =>
+          `"${r.prompt?.slice(0, 30)}..." → ${((r.responseLatencyMs ?? 0) / 1000).toFixed(1)}s`,
+      ),
+    });
+  }
+
+  // 7-9. Frontend health observations (from page health reports)
   const lastHealth = results.at(-1)?.pageHealth;
   if (lastHealth) {
     buildFrontendHealthObservations(lastHealth, obs);
@@ -1223,6 +1588,12 @@ const PROJECT_KNOWLEDGE: ProjectGotcha[] = [
     trigger: /SILENT|FunctionResponseScheduling\.SILENT/,
     warning:
       "FunctionResponseScheduling.SILENT is rejected by the server on native audio models. Don't use it.",
+  },
+  {
+    id: "audio-transcription-enable-field",
+    trigger: /AudioTranscription.*enable|enableTranscription|transcription.*:\s*\{\s*enable/,
+    warning:
+      "AudioTranscriptionConfig must be an empty object {}. Any fields like 'enable: true' or 'enableTranscription: true' cause WS 1007 'Unknown name'. Just use inputAudioTranscription: {} to enable.",
   },
 ];
 
@@ -1333,7 +1704,8 @@ export function buildSeniorNudgePrompt(
     "Be conversational, direct, and specific. Name the actors (Adam = tutor, Maya = student).",
   );
   parts.push(
-    "Describe what you SAW, not error codes. Reference specific files to investigate. Keep it under 200 words.",
+    "LEAD WITH WHAT THE SCREENSHOTS SHOW — a human tester looks at the screen first, reads logs second. " +
+      "Describe what you SAW, not error codes. Reference specific files to investigate. Keep it under 200 words.",
   );
   parts.push("");
 
@@ -1349,10 +1721,15 @@ export function buildSeniorNudgePrompt(
   }
 
   if (screenshots && screenshots.length > 0) {
-    parts.push("## What the Screen Showed (from screenshots)");
+    parts.push("## What the Screen Showed (MOST IMPORTANT — this is what a human would SEE)");
     for (const s of screenshots) {
       parts.push(`- Turn "${s.turn}": ${s.description}`);
     }
+    parts.push("");
+    parts.push(
+      "Key visual signals: Is 'Start Session' or 'End Session' showing? Is 'Enable Audio' button yellow/pulsing? " +
+        "Are there error toasts? Is the scratchpad canvas blank or populated?",
+    );
     parts.push("");
   }
 
@@ -1379,6 +1756,621 @@ export function buildSeniorNudgePrompt(
   }
 
   parts.push('End with: Fix these, then say "done" so I can retest. Details in QA-FEEDBACK.md.');
+
+  return parts.join("\n");
+}
+
+// ---------------------------------------------------------------------------
+// One-shot multimodal analysis — single LLM call for nudge + diagnosis
+// ---------------------------------------------------------------------------
+
+/**
+ * Build ONE prompt that asks the model to produce both a tmux nudge and a
+ * JSON diagnosis array. The model receives screenshots as images alongside
+ * this text prompt, so it can correlate visual state with technical signals.
+ */
+export function buildOneShotAnalysisPrompt(
+  results: EnrichedVoiceQaResult[],
+  behavioral: BehavioralObservation[],
+  projectWarnings: ProjectWarning[],
+  staticDiagnoses: Diagnosis[],
+  sourceFiles?: SourceFile[],
+  iterationHistory?: IterationContext[],
+  iteration?: number,
+  maxIterations?: number,
+): string {
+  const parts: string[] = [];
+
+  parts.push(
+    "You are a senior engineer who deeply knows this Gemini Live API voice tutor project (Scratchpad).",
+  );
+  parts.push(
+    "You're looking at screenshots of the app + technical signals from Playwright. Produce TWO outputs:",
+  );
+  parts.push("");
+  parts.push(
+    "1. A conversational **nudge** (typed into the developer's terminal) — lead with ROOT CAUSE, not symptoms.",
+  );
+  parts.push("2. A **diagnosis** JSON array for QA-FEEDBACK.md with specific file:line fixes.");
+  parts.push("");
+  parts.push("## ROOT CAUSE ANALYSIS (CRITICAL — read this first)");
+  parts.push(
+    "Your nudge goes to Codex (an AI coding agent). It can only fix CODE. Distinguish these layers:",
+  );
+  parts.push(
+    "1. **Tool registration** — Are functionDeclarations in LiveConnectConfig at connect time? Check console for '[useTutor] Tools in config: NONE' vs tool names listed.",
+  );
+  parts.push(
+    "2. **Model behavior** — Gemini native audio model is flaky with function calling. If tools ARE registered but model isn't calling them, the fix is prompt engineering or model config, NOT frontend code.",
+  );
+  parts.push(
+    "2b. **Auto-scribe fallback** — For native audio models, tools are STRIPPED. Instead, auto-scribe " +
+      "listens to Adam's outputTranscription, sends transcript to Gemini Flash API, extracts math as JSON commands, " +
+      "and renders on the canvas overlay. Check [AutoScribe] logs to see: Did outputTranscript fire? " +
+      "Did the API call succeed? Did post-filtering remove all commands? See the Auto-Scribe Pipeline Status section.",
+  );
+  parts.push(
+    "3. **Frontend rendering** — Only blame React/canvas code if tools ARE being called (or auto-scribe executed commands) but the canvas doesn't update.",
+  );
+  parts.push(
+    "4. **Dev server** — If the app shows a Vite error overlay or compile errors in console, Codex's previous changes broke the build. Say so explicitly.",
+  );
+  parts.push("");
+  parts.push("**Diagnostic checklist (answer in your nudge):**");
+  parts.push(
+    "- How many `functionCall` / `toolCall` events appear in console logs? (0 = model isn't calling tools)",
+  );
+  parts.push("- Does console show `[useTutor] Tools in config:` followed by tool names or NONE?");
+  parts.push("- Are there Vite compile errors or React error boundaries in the console?");
+  parts.push(
+    "- Is the issue the Gemini MODEL not calling tools, or the FRONTEND not rendering tool results?",
+  );
+  parts.push(
+    "- How many `[AutoScribe] outputTranscript:` events? (0 = transcript disabled or tutor silent)",
+  );
+  parts.push(
+    "- Did auto-scribe execute commands? Check `[AutoScribe] Executing N commands` in logs.",
+  );
+  parts.push(
+    "DO NOT suggest frontend code changes if the model simply isn't making function calls. " +
+      "For native audio models, focus on auto-scribe pipeline status instead of tool registration.",
+  );
+  parts.push("");
+  parts.push("Format your response EXACTLY like this:");
+  parts.push("```");
+  parts.push("=== NUDGE ===");
+  parts.push("[Your terminal message here — 100-200 words, conversational, name Adam/Maya]");
+  parts.push("");
+  parts.push("=== SCORECARD ===");
+  parts.push(
+    '{"overall":5,"visualClarity":3,"teachingEffectiveness":2,"scratchpadUsage":1,"conversationFlow":4,"ageAppropriateness":3,"aestheticNotes":["Pink circle is irrelevant to math","Text overlaps previous content"],"khanComparison":"Khan would draw a number line with dots. Adam just said four."}',
+  );
+  parts.push("");
+  parts.push("=== DIAGNOSIS ===");
+  parts.push(
+    '[{"severity":"critical","rootCause":"...","explanation":"...","suggestedFix":"--- a/file\\n+++ b/file\\n@@ ...","evidence":["..."]}]',
+  );
+  parts.push("```");
+  parts.push("");
+
+  // Iteration context
+  if (iteration !== undefined && maxIterations !== undefined) {
+    parts.push(`## Iteration ${iteration}/${maxIterations}`);
+    parts.push("");
+  }
+
+  // Screenshots instruction
+  const screenshotCount = results.filter(
+    (r) => r.screenshots?.before || r.screenshots?.after || r.screenshotPath,
+  ).length;
+  if (screenshotCount > 0) {
+    parts.push(`## Screenshots (${screenshotCount * 2} images attached)`);
+    parts.push("I've attached before/after screenshots for each test turn. Look at them FIRST.");
+    parts.push(
+      "Key visual signals: 'Start Session' vs 'End Session' button, error toasts, 'Enable Audio' yellow button, scratchpad canvas content.",
+    );
+    parts.push("");
+  }
+
+  // Behavioral observations
+  if (behavioral.length > 0) {
+    parts.push("## What I Observed (behavioral)");
+    for (const o of behavioral) {
+      parts.push(`- [${o.severity.toUpperCase()}] ${o.observation}`);
+    }
+    parts.push("");
+  }
+
+  // Test results with signals
+  const failed = results.filter((r) => !r.passed);
+  parts.push(`## Test Results (${failed.length} failed / ${results.length} total)`);
+  parts.push("");
+
+  for (const [idx, r] of failed.entries()) {
+    parts.push(`### Failed ${idx + 1}: "${r.prompt ?? "unknown"}"`);
+    if (r.tutorResponse) {
+      parts.push(`Tutor: "${r.tutorResponse}"`);
+    } else {
+      parts.push("Tutor: SILENT");
+    }
+    if (r.canvasChange) {
+      parts.push(
+        `Canvas: ${r.canvasChange.changed ? "CHANGED" : "UNCHANGED"} (${r.canvasChange.checksumBefore} → ${r.canvasChange.checksumAfter})`,
+      );
+    }
+    if ((r.toolCalls ?? []).length > 0) {
+      parts.push(`Tools called: ${(r.toolCalls ?? []).join(", ")}`);
+    }
+    // Surface visual assessment data (pedagogy score, canvas description)
+    if (r.visualAssessment) {
+      parts.push(`Visual score: ${r.visualAssessment.score}/100`);
+      if (r.visualAssessment.canvasDescription) {
+        parts.push(`Canvas description: ${r.visualAssessment.canvasDescription}`);
+      }
+      if (r.visualAssessment.pedagogyScore) {
+        const ps = r.visualAssessment.pedagogyScore;
+        parts.push(
+          `Pedagogy: clarity=${ps.explanationClarity}/5 relevance=${ps.drawingRelevance}/5 age=${ps.ageAppropriateness}/5 matches-claim=${ps.drawingMatchesClaim}`,
+        );
+      }
+      if (r.visualAssessment.issues.length > 0) {
+        parts.push("Visual issues:");
+        for (const issue of r.visualAssessment.issues.slice(0, 5)) {
+          parts.push(`  - [${issue.severity.toUpperCase()}] ${issue.description}`);
+        }
+      }
+    }
+    if (r.pageHealth) {
+      const ph = r.pageHealth;
+      const healthParts: string[] = [];
+      if (ph.hasErrorToast) {
+        healthParts.push(`toast: "${ph.toastMessages[0] ?? "error"}"`);
+      }
+      if (!ph.sessionConnected) {
+        healthParts.push("session DISCONNECTED");
+      }
+      if (ph.audioBlocked) {
+        healthParts.push("audio BLOCKED");
+      }
+      if (healthParts.length > 0) {
+        parts.push(`Page health: ${healthParts.join(", ")}`);
+      }
+    }
+
+    // Console errors (top 5)
+    if (r.consoleErrors.length > 0) {
+      parts.push("Console errors:");
+      for (const e of r.consoleErrors.slice(0, 5)) {
+        parts.push(`  - ${e.slice(0, 300)}`);
+      }
+    }
+
+    // Console logs (last 15)
+    if (r.consoleLogs.length > 0) {
+      parts.push(`Console logs (last 15 of ${r.consoleLogs.length}):`);
+      for (const l of r.consoleLogs.slice(-15)) {
+        parts.push(`  ${l.slice(0, 300)}`);
+      }
+    }
+
+    // WS events (last 20)
+    if (r.wsEvents.length > 0) {
+      parts.push(`WS events (${r.wsEvents.length}):`);
+      for (const evt of r.wsEvents.slice(-20)) {
+        const time = fmtTime(evt.timestamp);
+        if (evt.type === "close") {
+          parts.push(
+            `  [${time}] CLOSE code=${evt.closeCode ?? "?"} reason="${evt.closeReason ?? ""}"`,
+          );
+        } else if (evt.type === "open") {
+          parts.push(`  [${time}] OPEN ${evt.url ?? ""}`);
+        } else {
+          const dir = evt.type === "message-sent" ? "SENT" : "RECV";
+          parts.push(`  [${time}] ${dir} ${evt.payload?.slice(0, 150) ?? "<no payload>"}`);
+        }
+      }
+    }
+    parts.push("");
+  }
+
+  // Auto-scribe pipeline status (critical for native audio models)
+  const allConsoleLogs = results.flatMap((r) => r.consoleLogs);
+  const overallAutoScribe = extractAutoScribeStatus(allConsoleLogs);
+  if (
+    overallAutoScribe.transcriptEvents > 0 ||
+    overallAutoScribe.attempted ||
+    allConsoleLogs.some((l) => l.includes("[AutoScribe]"))
+  ) {
+    parts.push("## Auto-Scribe Pipeline Status");
+    parts.push(
+      "Native audio models have tools STRIPPED. Auto-scribe listens to Adam's outputTranscription, " +
+        "sends text to Gemini Flash for math extraction, renders on canvas overlay.",
+    );
+    parts.push(`Overall: ${formatAutoScribeStatus(overallAutoScribe)}`);
+    // Per-turn status
+    for (const [idx, r] of results.entries()) {
+      const turnStatus = extractAutoScribeStatus(r.consoleLogs);
+      const canvasLabel = r.canvasChange
+        ? r.canvasChange.changed
+          ? "canvas CHANGED"
+          : "canvas UNCHANGED"
+        : "canvas unknown";
+      parts.push(`  Turn ${idx}: ${formatAutoScribeStatus(turnStatus)} → ${canvasLabel}`);
+    }
+    parts.push("");
+  } else if (allConsoleLogs.some((l) => l.includes("Stripping tools"))) {
+    parts.push("## Auto-Scribe Pipeline Status");
+    parts.push("Tools were STRIPPED (native audio model) but NO auto-scribe activity detected.");
+    parts.push("This means: outputTranscription events are not firing OR the tutor never spoke.");
+    parts.push("");
+  }
+
+  // Static diagnoses (already detected)
+  if (staticDiagnoses.length > 0) {
+    parts.push("## Static Rules Already Detected");
+    for (const d of staticDiagnoses) {
+      parts.push(`- [${d.severity.toUpperCase()}] ${d.rootCause}`);
+    }
+    parts.push("");
+  }
+
+  // Project warnings
+  if (projectWarnings.length > 0) {
+    parts.push("## Known Project Gotchas");
+    for (const w of projectWarnings) {
+      parts.push(`- ${w.warning}`);
+    }
+    parts.push("");
+  }
+
+  // Source code
+  if (sourceFiles && sourceFiles.length > 0) {
+    parts.push("## Source Code");
+    for (const file of sourceFiles) {
+      parts.push(`### ${file.path}`);
+      parts.push("```typescript");
+      parts.push(file.content);
+      parts.push("```");
+      parts.push("");
+    }
+  }
+
+  // Iteration history
+  if (iterationHistory && iterationHistory.length > 0) {
+    parts.push("## Previous Attempts (REVIEW THESE — what did Codex change and did it help?)");
+    for (const ctx of iterationHistory) {
+      parts.push(`### Iteration ${ctx.iteration}`);
+      parts.push(`Nudge we sent: "${ctx.nudgeSent.slice(0, 300)}"`);
+      parts.push(
+        `Files Codex changed: ${ctx.changedFiles.join(", ") || "NONE — Codex made no changes"} (match: ${ctx.diffMatchResult})`,
+      );
+      if (ctx.compileOk === false) {
+        parts.push(
+          "**COMPILE FAILED** — Codex's changes broke the build. The test ran against OLD code.",
+        );
+      }
+      if (ctx.diffSnippet) {
+        parts.push("Codex's actual diff (review this — did it fix the right layer?):");
+        parts.push("```diff");
+        parts.push(ctx.diffSnippet);
+        parts.push("```");
+      } else if (ctx.changedFiles.length === 0) {
+        parts.push(
+          "Codex made ZERO changes. Possible reasons: model error, couldn't understand the nudge, or wrong working directory.",
+        );
+      }
+      parts.push("");
+    }
+  }
+
+  // Known bugs reference
+  parts.push("## Known Gemini Bugs");
+  parts.push("- sendToolResponse → WS 1011: use clientContent with functionResponse instead");
+  parts.push("- NON_BLOCKING → hallucination: remove it");
+  parts.push("- Complex schemas → malformed calls: keep flat");
+  parts.push("- WORKAROUND may already be applied in tutor-service.ts — check source code");
+  parts.push("");
+
+  // Pedagogical quality rubric
+  parts.push("## Pedagogical Quality (Sal Khan standard)");
+  parts.push(
+    "The tutor (Adam) should teach like Sal Khan — step-by-step visual explanations that build understanding.",
+  );
+  parts.push(
+    "Assess these in your diagnosis (severity 'major' for failures, 'minor' for improvements):",
+  );
+  parts.push(
+    "- Does Adam explain step-by-step, or just blurt the answer? (Khan draws out each step)",
+  );
+  parts.push(
+    "- Does Adam USE the scratchpad to draw while explaining? (Khan's whole approach is visual)",
+  );
+  parts.push("- Are drawings relevant and helpful, or random/decorative?");
+  parts.push(
+    "- Is the tone warm, encouraging, age-appropriate? ('Great question!' not 'The answer is 4.')",
+  );
+  parts.push("- Does Adam build on what Maya said, or ignore her entirely?");
+  parts.push("- Would a 3rd grader understand this explanation?");
+  parts.push(
+    "If Adam just says 'four' without drawing or explaining, that's a MAJOR pedagogy failure.",
+  );
+  parts.push("");
+
+  // Visual regression checks
+  parts.push("## Visual Regression Checks (IMPORTANT)");
+  parts.push("Look at the screenshots carefully and answer:");
+  parts.push(
+    "- Is content being drawn ON TOP of previous content without clearing? (overwriting makes scratchpad unreadable)",
+  );
+  parts.push(
+    "- Are there random/irrelevant shapes (circles, lines) that don't relate to the math topic?",
+  );
+  parts.push(
+    "- Is the canvas aesthetically clean? Good contrast against dark background? Readable text size?",
+  );
+  parts.push("- Compare the visual to what Khan Academy would show for this exact problem.");
+  parts.push("");
+
+  // Khan Academy reference examples
+  parts.push("## Khan Academy Reference (what GOOD looks like)");
+  parts.push(
+    "For '2+2': Khan would draw two groups of dots, count them together, write '2+2=4' step by step.",
+  );
+  parts.push("For '3×5': Khan would show 3 rows of 5 dots, count total, then write '3×5=15'.");
+  parts.push(
+    "For 'show on the board': Khan would draw a number line, place dots, animate the operation.",
+  );
+  parts.push(
+    "For 'why does addition work': Khan would use physical objects (apples, blocks) drawn on screen.",
+  );
+  parts.push(
+    "Adam should be doing THIS level of visual teaching. If he's just talking — that's a failure.",
+  );
+  parts.push("");
+
+  // Blank canvas emergency — when ALL turns have blank canvas, be extremely prescriptive
+  const allCanvasBlank = results.every((r) => !r.canvasChange || !r.canvasChange.changed);
+  if (allCanvasBlank) {
+    parts.push("## BLANK CANVAS EMERGENCY");
+    parts.push(
+      "The canvas is BLANK across ALL turns. This is a total visual failure — score will be 1-2/10.",
+    );
+    parts.push("");
+    parts.push(
+      "**Focus your ENTIRE nudge on the ONE most impactful fix from this priority list:**",
+    );
+    parts.push(
+      "0. **HIGHEST PRIORITY: Is the OverlayAnimator drawing to a 0x0 canvas?** " +
+        "In canvas-renderer.ts `attach()`, the code does `this.width = canvas.width; this.height = canvas.height`. " +
+        "If the canvas uses CSS sizing (width:100%) without explicit HTML width/height attributes, " +
+        "these values are 0 and ALL drawing is invisible. Fix: in attach(), use " +
+        "`this.width = canvas.getBoundingClientRect().width` or ensure the <canvas> element has " +
+        "explicit width/height attributes. Check ScratchpadAIOverlay.tsx — the overlay canvas MUST " +
+        "have width={number} height={number} attributes matching its rendered size.",
+    );
+    parts.push(
+      "1. **Is auto-scribe extracting commands but they're being filtered out?** " +
+        "Check `[AutoScribe] Filtering out` logs. If yes: the post-filter in useScratchpadAI.ts is too aggressive. " +
+        "The fix is to ACCEPT any command from the Flash API that has text containing digits or math operators. " +
+        "The LLM already decided it's math — the post-filter should trust it.",
+    );
+    parts.push(
+      "2. **Is auto-scribe's Flash API call returning empty commands?** " +
+        "Check `[AutoScribe] Raw response:` logs. If the API returns `[]`, the system prompt is too restrictive. " +
+        "Lower the bar: any math-adjacent text should produce a write_step command.",
+    );
+    parts.push(
+      "3. **Is auto-scribe never firing at all?** " +
+        "Check `[AutoScribe] outputTranscript:` count. If 0, the model isn't producing transcription events. " +
+        "Verify inputAudioTranscription is {} (empty object) in the connect config. " +
+        "If transcripts ARE arriving but auto-scribe ignores them, check shouldAttemptAutoScribe().",
+    );
+    parts.push(
+      "4. **Is the fallback question draw working?** " +
+        "When auto-scribe produces nothing, drawFallbackQuestion() should render the question text ('2+2'). " +
+        "If the canvas is STILL blank, the fallback itself is broken — check canvas-renderer.ts.",
+    );
+    parts.push("");
+    parts.push(
+      "**DO NOT list 5 problems.** Pick the ONE highest-priority fix from above and give Codex " +
+        "a specific file:function with the exact change needed. The goal is to get ANYTHING on the canvas.",
+    );
+    parts.push("");
+  }
+
+  // Output instructions
+  parts.push("## Output Rules");
+  parts.push(
+    "- NUDGE: Conversational, 100-200 words. Name Adam/Maya. **Lead with root cause layer** (tool registration / model behavior / frontend rendering / dev server). End with 'Fix these, then say done.'",
+  );
+  parts.push(
+    "- NUDGE must start with ONE of: 'Tool registration issue:', 'Model behavior issue:', 'Frontend rendering issue:', or 'Dev server issue:' — then explain.",
+  );
+  parts.push(
+    "- NUDGE must include the functionCall count from console logs (e.g. '0 function calls in 1371 console entries').",
+  );
+  parts.push(
+    "- **FOCUS**: Your nudge should prioritize the SINGLE most impactful fix. Don't list 5+ problems — Codex works better with one clear directive.",
+  );
+  parts.push(
+    "- SCORECARD: JSON object with overall (1-10), visualClarity (1-5), teachingEffectiveness (1-5), scratchpadUsage (1-5), conversationFlow (1-5), ageAppropriateness (1-5), aestheticNotes (string[]), khanComparison (string).",
+  );
+  parts.push(
+    "- DIAGNOSIS: JSON array. suggestedFix MUST target the correct layer. If 0 function calls → fix tool registration or system prompt, NOT canvas rendering code.",
+  );
+  parts.push(
+    "- Include pedagogy issues as diagnoses with rootCause starting with 'Pedagogy:' (e.g. 'Pedagogy: verbal-only teaching without scratchpad')",
+  );
+  parts.push(
+    "- If Codex made changes last iteration but score didn't improve, say WHAT it changed and WHY it didn't help.",
+  );
+  parts.push(
+    '- End NUDGE with: Fix these, then say "done" so I can retest. Details in QA-FEEDBACK.md.',
+  );
+
+  return parts.join("\n");
+}
+
+/** Parsed result from a one-shot analysis response. */
+export type OneShotResult = {
+  nudge: string;
+  diagnoses: Diagnosis[];
+  /** Structured quality scorecard (Khan Academy standard). */
+  scorecard?: ExperienceScorecard;
+};
+
+/**
+ * Parse a one-shot response that contains both NUDGE and DIAGNOSIS sections.
+ * Splits on === NUDGE === and === DIAGNOSIS === markers.
+ */
+export function parseOneShotResponse(response: string): OneShotResult {
+  const nudgeMarker = "=== NUDGE ===";
+  const scorecardMarker = "=== SCORECARD ===";
+  const diagMarker = "=== DIAGNOSIS ===";
+
+  let nudge = "";
+  let diagnoses: Diagnosis[] = [];
+  let scorecard: ExperienceScorecard | undefined;
+
+  const nudgeIdx = response.indexOf(nudgeMarker);
+  const scorecardIdx = response.indexOf(scorecardMarker);
+  const diagIdx = response.indexOf(diagMarker);
+
+  // Extract nudge section
+  if (nudgeIdx >= 0) {
+    const nudgeEnd = Math.min(
+      ...[scorecardIdx, diagIdx].filter((i) => i > nudgeIdx),
+      response.length,
+    );
+    nudge = response.slice(nudgeIdx + nudgeMarker.length, nudgeEnd).trim();
+  } else if (diagIdx >= 0) {
+    nudge = response.slice(0, diagIdx).trim();
+  }
+
+  // Extract scorecard section
+  if (scorecardIdx >= 0) {
+    const scorecardEnd = diagIdx > scorecardIdx ? diagIdx : response.length;
+    const scorecardText = response
+      .slice(scorecardIdx + scorecardMarker.length, scorecardEnd)
+      .trim();
+    scorecard = parseScorecardJson(scorecardText);
+  }
+
+  // Extract diagnosis section
+  if (diagIdx >= 0) {
+    const diagText = response.slice(diagIdx + diagMarker.length).trim();
+    diagnoses = parseLlmDiagnosis(diagText);
+  } else if (nudgeIdx < 0 && scorecardIdx < 0) {
+    // No markers at all — try to parse as JSON diagnosis, use full text as nudge fallback
+    diagnoses = parseLlmDiagnosis(response);
+    if (diagnoses.length === 0) {
+      nudge = response.trim();
+    }
+  }
+
+  return { nudge, diagnoses, scorecard };
+}
+
+/** Parse scorecard JSON from the SCORECARD section. */
+function parseScorecardJson(text: string): ExperienceScorecard | undefined {
+  const jsonMatch = text.match(/\{[\s\S]*\}/);
+  if (!jsonMatch) {
+    return undefined;
+  }
+
+  try {
+    const raw = JSON.parse(jsonMatch[0]) as Record<string, unknown>;
+    return {
+      overall: clampScorecard(raw.overall, 1, 10),
+      visualClarity: clampScorecard(raw.visualClarity, 1, 5),
+      teachingEffectiveness: clampScorecard(raw.teachingEffectiveness, 1, 5),
+      scratchpadUsage: clampScorecard(raw.scratchpadUsage, 1, 5),
+      conversationFlow: clampScorecard(raw.conversationFlow, 1, 5),
+      ageAppropriateness: clampScorecard(raw.ageAppropriateness, 1, 5),
+      aestheticNotes: Array.isArray(raw.aestheticNotes)
+        ? (raw.aestheticNotes as string[]).filter((n) => typeof n === "string")
+        : [],
+      khanComparison: typeof raw.khanComparison === "string" ? raw.khanComparison : "",
+    };
+  } catch {
+    return undefined;
+  }
+}
+
+/** Clamp a scorecard value to [min, max]. */
+function clampScorecard(v: unknown, min: number, max: number): number {
+  if (typeof v !== "number" || Number.isNaN(v)) {
+    return min;
+  }
+  return Math.max(min, Math.min(max, Math.round(v)));
+}
+
+// ---------------------------------------------------------------------------
+// Code review prompt — LLM review of agent's code changes
+// ---------------------------------------------------------------------------
+
+/**
+ * Build an LLM prompt to review the agent's code changes (git diff).
+ * Catches anti-patterns like propertyOrdering, sendToolResponse, scope creep.
+ */
+export function buildCodeReviewPrompt(
+  diff: string,
+  originalNudge: string,
+  projectWarnings: ProjectWarning[],
+): string {
+  const parts: string[] = [];
+
+  parts.push(
+    "You are a senior engineer reviewing code changes made by another agent to fix voice QA issues in a Gemini Live API tutor app.",
+  );
+  parts.push("Review this diff and give line-specific feedback.");
+  parts.push("");
+
+  parts.push("## The Original Issue (what we asked the agent to fix)");
+  parts.push(originalNudge.slice(0, 1000));
+  parts.push("");
+
+  parts.push("## The Agent's Diff");
+  parts.push("```diff");
+  parts.push(diff.slice(0, 8000));
+  parts.push("```");
+  parts.push("");
+
+  if (projectWarnings.length > 0) {
+    parts.push("## Known Anti-Patterns to Check For");
+    for (const w of projectWarnings) {
+      parts.push(`- ${w.warning}`);
+    }
+    parts.push("");
+  }
+
+  parts.push("## Specific Checks");
+  parts.push("Flag any of these if found in the diff:");
+  parts.push(
+    "- `propertyOrdering` added to tool schemas (increases malformed call risk on native audio)",
+  );
+  parts.push("- `sendToolResponse` instead of `clientContent` + `functionResponse` workaround");
+  parts.push("- `NON_BLOCKING` or `FunctionResponseScheduling.NON_BLOCKING` reintroduced");
+  parts.push("- `SILENT` or `FunctionResponseScheduling.SILENT` (rejected by server)");
+  parts.push("- Overly complex tool schemas (nested objects, >5 params per tool)");
+  parts.push("- Scope creep: changes unrelated to the original issue");
+  parts.push("- Missing error handling on WebSocket send/receive paths");
+  parts.push("- Module-level caches shared between Adam and Maya sessions");
+  parts.push("");
+
+  parts.push("## Output Format");
+  parts.push("Give line-specific feedback like:");
+  parts.push(
+    '  "tutor-service.ts:256 — you added propertyOrdering to draw_annotation schema. Known anti-pattern on native audio. Remove it."',
+  );
+  parts.push(
+    '  "useScratchpadAI.ts:142 — good fix, correctly uses clientContent instead of toolResponse."',
+  );
+  parts.push("");
+  parts.push(
+    "Be brief and direct. If the diff looks good, say so. If it introduces problems, list them.",
+  );
+  parts.push("Focus on correctness and known gotchas, not style.");
 
   return parts.join("\n");
 }

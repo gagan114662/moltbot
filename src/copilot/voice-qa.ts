@@ -287,6 +287,16 @@ export function buildVoiceArgs(wavPath: string): string[] {
 // Types
 // ---------------------------------------------------------------------------
 
+/** Before/after screenshot paths for a single prompt or turn. */
+export type ScreenshotSet = { before?: string; after?: string };
+
+/** Canvas pixel checksum for detecting whether anything was drawn. */
+export type CanvasChangeInfo = {
+  checksumBefore: string | null;
+  checksumAfter: string | null;
+  changed: boolean;
+};
+
 export type VoiceQaResult = {
   prompt: string;
   /** What SpeechRecognition heard (user side) */
@@ -294,9 +304,15 @@ export type VoiceQaResult = {
   /** What the tutor replied */
   tutorResponse?: string;
   screenshotPath?: string;
+  /** Before/after screenshots for richer visual diff. */
+  screenshots?: ScreenshotSet;
+  /** Canvas pixel checksum change detection. */
+  canvasChange?: CanvasChangeInfo;
   consoleErrors: string[];
   /** All console.log/warn/info for diagnostics */
   consoleLogs: string[];
+  /** Frontend health snapshot from Playwright DOM inspection. */
+  pageHealth?: import("./types.js").PageHealthReport;
   /** WebSocket events captured during the test (for diagnosis engine). */
   wsEvents?: WsEvent[];
   passed: boolean;
@@ -356,11 +372,24 @@ export type VisualIssue = {
   location?: string;
 };
 
+export type PedagogyScore = {
+  /** Clarity of explanation (1-5). */
+  explanationClarity: number;
+  /** Relevance of drawing to the explanation (1-5). */
+  drawingRelevance: number;
+  /** Age-appropriateness of language and visuals (1-5). */
+  ageAppropriateness: number;
+  /** Whether the drawing matches what the tutor claimed to do. */
+  drawingMatchesClaim: boolean;
+};
+
 export type VisualAssessment = {
   score: number;
   canvasDescription: string;
   issues: VisualIssue[];
   drawingCorrect: boolean;
+  /** Pedagogical quality assessment (when rubric is enabled). */
+  pedagogyScore?: PedagogyScore;
   rawResponse: string;
 };
 
@@ -373,9 +402,15 @@ export type TurnResult = {
   visualAssessment?: VisualAssessment;
   /** Which TTS engine generated this turn's student audio. */
   ttsEngine?: string;
+  /** Time from prompt audio end to first tutor response (ms). Undefined if no response. */
+  responseLatencyMs?: number;
   passed: boolean;
   failReasons: string[];
   screenshotPath?: string;
+  /** Before/after screenshots for richer visual diff. */
+  screenshots?: ScreenshotSet;
+  /** Canvas pixel checksum change detection. */
+  canvasChange?: CanvasChangeInfo;
   consoleErrors: string[];
   consoleLogs: string[];
   /** Frontend health snapshot from Playwright DOM inspection. */
@@ -392,6 +427,8 @@ export type MultiTurnResult = {
   wsEvents: WsEvent[];
   overallConsoleErrors: string[];
   overallConsoleLogs: string[];
+  /** Path to session video recording (Playwright recordVideo). */
+  videoPath?: string;
 };
 
 export type MultiTurnVoiceQaParams = {
@@ -427,7 +464,7 @@ export const ELEMENTARY_MATH_SCRIPT: StudentScript = {
     {
       prompt: "Can you show me that on the board?",
       waitSec: 20,
-      expect: { responds: true, toolCall: "draw_*", drawingExpected: true },
+      expect: { responds: true, drawingExpected: true },
     },
     {
       prompt: "Why does addition work like that?",
@@ -438,6 +475,50 @@ export const ELEMENTARY_MATH_SCRIPT: StudentScript = {
       prompt: "Now what about three times five?",
       waitSec: 25,
       expect: { responds: true, keywords: ["fifteen", "15"] },
+    },
+  ],
+};
+
+export const GEOMETRY_SCRIPT: StudentScript = {
+  name: "geometry-basics",
+  description: "Tests geometry tutoring with shape drawing (3 turns, ~1.5 min)",
+  turns: [
+    {
+      prompt: "What is a triangle?",
+      waitSec: 15,
+      expect: { responds: true, drawingExpected: true },
+    },
+    {
+      prompt: "Can you draw one for me?",
+      waitSec: 20,
+      expect: { responds: true, drawingExpected: true },
+    },
+    {
+      prompt: "How many sides does it have?",
+      waitSec: 15,
+      expect: { responds: true, keywords: ["three", "3"] },
+    },
+  ],
+};
+
+export const FRACTIONS_SCRIPT: StudentScript = {
+  name: "fractions-intro",
+  description: "Tests fraction concepts with visual explanations (3 turns, ~1.5 min)",
+  turns: [
+    {
+      prompt: "What is one half?",
+      waitSec: 15,
+      expect: { responds: true },
+    },
+    {
+      prompt: "Can you show me with a picture?",
+      waitSec: 20,
+      expect: { responds: true, drawingExpected: true },
+    },
+    {
+      prompt: "What about one third?",
+      waitSec: 20,
+      expect: { responds: true, drawingExpected: true },
     },
   ],
 };
@@ -483,7 +564,7 @@ async function pollForTutorResponse(
   timeoutMs: number,
   intervalMs = 500,
   previousTutorResponse?: string,
-): Promise<{ transcript?: string; tutorResponse?: string }> {
+): Promise<{ transcript?: string; tutorResponse?: string; responseDetectedAt?: number }> {
   const deadline = Date.now() + timeoutMs;
   let lastUserTranscript: string | undefined;
 
@@ -514,7 +595,11 @@ async function pollForTutorResponse(
       const cleaned = cleanSubtitleText(result.text);
       // Only count as new response if it differs from the previous turn's response
       if (cleaned && cleaned !== previousTutorResponse) {
-        return { transcript: lastUserTranscript, tutorResponse: cleaned };
+        return {
+          transcript: lastUserTranscript,
+          tutorResponse: cleaned,
+          responseDetectedAt: Date.now(),
+        };
       }
     }
     if (result?.text && result.speaker.includes("You")) {
@@ -525,6 +610,40 @@ async function pollForTutorResponse(
   }
 
   return { transcript: lastUserTranscript };
+}
+
+// ---------------------------------------------------------------------------
+// Floating panel — click "Teach" and "Demo" buttons
+// ---------------------------------------------------------------------------
+
+/**
+ * After "Start Session" connects Adam, click the floating panel buttons
+ * to open the scratchpad ("Teach") and start the student sim ("Demo").
+ * Logs actions to consoleLogs. Tolerates missing buttons gracefully.
+ */
+async function clickFloatingPanelButtons(
+  page: import("playwright-core").Page,
+  consoleLogs: string[],
+): Promise<void> {
+  // Click "Teach" — opens the scratchpad so Adam can draw
+  const teachBtn = page.locator('button:has-text("Teach")').first();
+  try {
+    await teachBtn.click({ timeout: 5_000 });
+    consoleLogs.push("[voice-qa] Clicked 'Teach' — scratchpad opened");
+    await page.waitForTimeout(1_000);
+  } catch {
+    consoleLogs.push("[voice-qa] 'Teach' button not found — skipping");
+  }
+
+  // Click "Demo" — starts Maya (student simulation)
+  const demoBtn = page.locator('button:has-text("Demo")').first();
+  try {
+    await demoBtn.click({ timeout: 5_000 });
+    consoleLogs.push("[voice-qa] Clicked 'Demo' — Maya student sim started");
+    await page.waitForTimeout(2_000);
+  } catch {
+    consoleLogs.push("[voice-qa] 'Demo' button not found — skipping");
+  }
 }
 
 // ---------------------------------------------------------------------------
@@ -641,11 +760,24 @@ export async function runVoiceQa(params: VoiceQaParams): Promise<VoiceQaResult[]
         // Wait for Gemini session to establish
         await page.waitForTimeout(5_000);
 
+        // Click floating panel buttons (Teach → Demo)
+        await clickFloatingPanelButtons(page, consoleLogs);
+
+        // Before screenshot + canvas checksum
+        const beforePath = path.join(evidenceDir, `voice-before-${Date.now()}.png`);
+        await page.screenshot({ path: beforePath, fullPage: true });
+        const checksumBefore = await captureCanvasChecksum(page);
+
         // Poll for tutor response (not a fixed timeout)
         const { transcript, tutorResponse } = await pollForTutorResponse(page, timeoutMs);
 
+        // After screenshot + canvas checksum
         const screenshotPath = path.join(evidenceDir, `voice-${Date.now()}.png`);
         await page.screenshot({ path: screenshotPath, fullPage: true });
+        const checksumAfter = await captureCanvasChecksum(page);
+
+        // Inspect page health (what a human would see)
+        const pageHealth = await inspectPageHealth(page);
 
         // A greeting-only response is a FAIL — tutor must actually answer
         const isGreeting = tutorResponse ? isGreetingResponse(tutorResponse) : false;
@@ -656,6 +788,13 @@ export async function runVoiceQa(params: VoiceQaParams): Promise<VoiceQaResult[]
           transcript,
           tutorResponse,
           screenshotPath,
+          screenshots: { before: beforePath, after: screenshotPath },
+          canvasChange: {
+            checksumBefore,
+            checksumAfter,
+            changed: checksumBefore !== checksumAfter,
+          },
+          pageHealth,
           consoleErrors,
           consoleLogs,
           wsEvents,
@@ -746,6 +885,10 @@ export function formatMultiTurnReport(result: MultiTurnResult): string {
     if (t.tutorResponse) {
       lines.push(`  Tutor said: ${t.tutorResponse}`);
     }
+    if (t.responseLatencyMs !== undefined) {
+      const secs = (t.responseLatencyMs / 1000).toFixed(1);
+      lines.push(`  Response latency: ${secs}s${t.responseLatencyMs > 5000 ? " (SLOW)" : ""}`);
+    }
     if (t.toolCalls.length > 0) {
       lines.push(`  Tool calls: ${t.toolCalls.join(", ")}`);
     }
@@ -757,6 +900,12 @@ export function formatMultiTurnReport(result: MultiTurnResult): string {
     }
     if (t.visualAssessment) {
       lines.push(`  Visual score: ${t.visualAssessment.score}/100`);
+      if (t.visualAssessment.pedagogyScore) {
+        const ps = t.visualAssessment.pedagogyScore;
+        lines.push(
+          `  Pedagogy: clarity=${ps.explanationClarity}/5 relevance=${ps.drawingRelevance}/5 age-appropriate=${ps.ageAppropriateness}/5 matches-claim=${ps.drawingMatchesClaim}`,
+        );
+      }
       if (t.visualAssessment.issues.length > 0) {
         for (const issue of t.visualAssessment.issues) {
           lines.push(`  [${issue.severity.toUpperCase()}] ${issue.description}`);
@@ -899,9 +1048,9 @@ export function generateSessionWav(
 // ---------------------------------------------------------------------------
 
 const VISUAL_QA_PROMPT = `You are a QA engineer reviewing a screenshot of an AI math tutor's blackboard.
-The tutor just responded to: "{prompt}"
+The tutor (Adam) just responded to student (Maya): "{prompt}"
 
-Assess the visual quality of the blackboard. Return a JSON object:
+Assess the visual quality AND pedagogical quality. Return a JSON object:
 
 {
   "score": 0-100,
@@ -913,10 +1062,16 @@ Assess the visual quality of the blackboard. Return a JSON object:
       "description": "what's wrong",
       "location": "where on screen"
     }
-  ]
+  ],
+  "pedagogyScore": {
+    "explanationClarity": 1-5,
+    "drawingRelevance": 1-5,
+    "ageAppropriateness": 1-5,
+    "drawingMatchesClaim": true/false
+  }
 }
 
-Check for:
+Visual checks:
 - CRITICAL: Overlapping text/drawings making content unreadable
 - CRITICAL: Completely wrong content (e.g. drew subtraction when asked about addition)
 - CRITICAL: Blank canvas when drawing was expected
@@ -925,9 +1080,12 @@ Check for:
 - MAJOR: Missing elements (asked to draw number line but only text shown)
 - MINOR: Uneven spacing between elements
 - MINOR: Inconsistent font sizes
-- MINOR: Pen cursor visible in final state
 
-For "drawingCorrect": true if the drawing reasonably matches what the student asked for.
+Pedagogical assessment (pedagogyScore):
+- explanationClarity (1-5): Is the visual explanation clear and step-by-step? 5 = crystal clear
+- drawingRelevance (1-5): Does the drawing help explain the concept? 5 = perfectly relevant
+- ageAppropriateness (1-5): Would an elementary student understand this? 5 = perfect for kids
+- drawingMatchesClaim: Does the drawing match what Adam said he would draw?
 
 Also check overall page health (add to issues if found):
 - CRITICAL: Error overlay, error boundary, or crash screen visible
@@ -939,6 +1097,14 @@ Also check overall page health (add to issues if found):
 Describe the page as a human tester would: what do you SEE on screen beyond the canvas?
 
 Return ONLY the JSON object, no markdown.`;
+
+/** Clamp a pedagogy sub-score to 1-5 (default 1). */
+function clampScore(v: number | undefined): number {
+  if (typeof v !== "number") {
+    return 1;
+  }
+  return Math.max(1, Math.min(5, Math.round(v)));
+}
 
 /** Parse a vision model's response into a VisualAssessment. */
 export function parseVisualAssessment(raw: string): VisualAssessment {
@@ -961,6 +1127,12 @@ export function parseVisualAssessment(raw: string): VisualAssessment {
       canvasDescription?: string;
       drawingCorrect?: boolean;
       issues?: Array<{ severity?: string; description?: string; location?: string }>;
+      pedagogyScore?: {
+        explanationClarity?: number;
+        drawingRelevance?: number;
+        ageAppropriateness?: number;
+        drawingMatchesClaim?: boolean;
+      };
     };
 
     const issues: VisualIssue[] = [];
@@ -979,11 +1151,24 @@ export function parseVisualAssessment(raw: string): VisualAssessment {
       }
     }
 
+    // Parse pedagogical score if present
+    let pedagogyScore: PedagogyScore | undefined;
+    if (parsed.pedagogyScore) {
+      const ps = parsed.pedagogyScore;
+      pedagogyScore = {
+        explanationClarity: clampScore(ps.explanationClarity),
+        drawingRelevance: clampScore(ps.drawingRelevance),
+        ageAppropriateness: clampScore(ps.ageAppropriateness),
+        drawingMatchesClaim: ps.drawingMatchesClaim ?? false,
+      };
+    }
+
     return {
       score: typeof parsed.score === "number" ? parsed.score : 0,
       canvasDescription: parsed.canvasDescription ?? "",
       issues,
       drawingCorrect: parsed.drawingCorrect ?? false,
+      pedagogyScore,
       rawResponse: raw,
     };
   } catch {
@@ -994,6 +1179,55 @@ export function parseVisualAssessment(raw: string): VisualAssessment {
 // ---------------------------------------------------------------------------
 // Multi-turn runner
 // ---------------------------------------------------------------------------
+
+/**
+ * Capture a fast pixel-sampling checksum of the first canvas on the page.
+ * Samples a 32x32 grid and computes a DJB2 hash. Returns null if no canvas.
+ * Used to detect whether the tutor actually drew something vs canvas staying blank.
+ */
+export async function captureCanvasChecksum(
+  page: import("playwright-core").Page,
+): Promise<string | null> {
+  try {
+    return await page.evaluate(() => {
+      // Prefer the composite canvas (base + AI overlay merged) or the AI overlay directly.
+      // IMPORTANT: document.querySelector("canvas") returns the base drawing canvas which
+      // does NOT contain AI-drawn content — the AI draws on a separate overlay canvas.
+      const canvas = (document.getElementById("scratchpad-canvas") ||
+        document.getElementById("scratchpad-overlay-canvas") ||
+        document.querySelector("canvas")) as HTMLCanvasElement | null;
+      if (!canvas) {
+        return null;
+      }
+      const ctx = canvas.getContext("2d");
+      if (!ctx) {
+        return null;
+      }
+      const w = canvas.width;
+      const h = canvas.height;
+      if (w === 0 || h === 0) {
+        return null;
+      }
+      // Sample 32x32 grid of pixels
+      const stepX = Math.max(1, Math.floor(w / 32));
+      const stepY = Math.max(1, Math.floor(h / 32));
+      let hash = 5381;
+      for (let y = 0; y < h; y += stepY) {
+        for (let x = 0; x < w; x += stepX) {
+          const pixel = ctx.getImageData(x, y, 1, 1).data;
+          // DJB2 hash — fold RGBA into hash
+          hash = ((hash << 5) + hash + pixel[0]) | 0;
+          hash = ((hash << 5) + hash + pixel[1]) | 0;
+          hash = ((hash << 5) + hash + pixel[2]) | 0;
+          hash = ((hash << 5) + hash + pixel[3]) | 0;
+        }
+      }
+      return (hash >>> 0).toString(16);
+    });
+  } catch {
+    return null;
+  }
+}
 
 /**
  * Inspect the page DOM for visible health signals a human would notice.
@@ -1172,13 +1406,19 @@ function attachPageListeners(
 function extractToolCalls(consoleLogs: string[], _startIdx: number, _endIdx: number): string[] {
   // Tool calls are logged like: [useTutor] Calling tool: draw_annotation
   // or: [log] [useScratchpadAI] functionCall: draw_annotation
+  // Auto-scribe renders are logged: [AutoScribe] Executing 2 commands
   const tools: string[] = [];
-  // Scan the provided slice of logs (startIdx..endIdx)
   const slice = consoleLogs.slice(_startIdx, _endIdx);
   for (const log of slice) {
     const match = log.match(/(?:Calling tool|functionCall|tool call)[:\s]+(\w+)/i);
     if (match) {
       tools.push(match[1]);
+      continue;
+    }
+    // Recognize auto-scribe renders (native audio fallback path)
+    const autoScribeMatch = log.match(/\[AutoScribe\] Executing (\d+) commands/);
+    if (autoScribeMatch) {
+      tools.push("auto_scribe");
     }
   }
   return tools;
@@ -1191,6 +1431,7 @@ function gradeTurn(
   toolCalls: string[],
   visualAssessment: VisualAssessment | undefined,
   consoleErrors: string[],
+  canvasChange?: CanvasChangeInfo,
 ): { passed: boolean; failReasons: string[]; keywords: { expected: string[]; found: string[] } } {
   const failReasons: string[] = [];
   const expected = turn.expect ?? { responds: true };
@@ -1216,7 +1457,7 @@ function gradeTurn(
     }
   }
 
-  // Check: expected tool call
+  // Check: expected tool call (legacy — prefer drawingExpected + canvasChange)
   if (expected.toolCall) {
     const pattern = expected.toolCall;
     const matched = pattern.includes("*")
@@ -1229,7 +1470,14 @@ function gradeTurn(
     }
   }
 
-  // Check: drawing expected
+  // Check: drawing expected via canvas change (works for both tool calls and auto-scribe)
+  if (expected.drawingExpected && canvasChange && !canvasChange.changed) {
+    failReasons.push(
+      "Drawing expected but canvas unchanged (neither tool calls nor auto-scribe produced content)",
+    );
+  }
+
+  // Check: drawing expected via visual assessment (secondary check)
   if (expected.drawingExpected && visualAssessment && !visualAssessment.drawingCorrect) {
     failReasons.push("Drawing expected but canvas shows incorrect or no content");
   }
@@ -1300,7 +1548,10 @@ export async function runMultiTurnVoiceQa(
     const turns: TurnResult[] = [];
 
     try {
-      const context = await browser.newContext({ permissions: ["microphone", "camera"] });
+      const context = await browser.newContext({
+        permissions: ["microphone", "camera"],
+        recordVideo: { dir: evidenceDir, size: { width: 1280, height: 720 } },
+      });
       const page = await context.newPage();
 
       // Attach listeners
@@ -1318,6 +1569,9 @@ export async function runMultiTurnVoiceQa(
 
       // Wait for Gemini session to establish + WAV starts playing from fake mic
       await page.waitForTimeout(5_000);
+
+      // Click floating panel buttons (Teach → Demo) to open scratchpad & start Maya
+      await clickFloatingPanelButtons(page, allConsoleLogs);
 
       // Session clock: WAV started playing ~when getUserMedia was called
       const sessionStart = Date.now();
@@ -1350,10 +1604,16 @@ export async function runMultiTurnVoiceQa(
           `[voice-qa] Turn ${i}: prompt "${turn.prompt}" at ${Math.round((Date.now() - sessionStart) / 1000)}s`,
         );
 
+        // Before screenshot + canvas checksum
+        const beforePath = path.join(evidenceDir, `turn-${i}-before-${Date.now()}.png`);
+        await page.screenshot({ path: beforePath, fullPage: true });
+        const checksumBefore = await captureCanvasChecksum(page);
+
         // Poll for NEW tutor response until this turn's response window closes
+        const promptEndWallMs = Date.now(); // approximate wall-clock when prompt audio ended
         const remainingWindowMs = timing.windowEndMs - (Date.now() - sessionStart);
         const pollMs = Math.max(remainingWindowMs, 5_000);
-        const { tutorResponse } = await pollForTutorResponse(
+        const { tutorResponse, responseDetectedAt } = await pollForTutorResponse(
           page,
           pollMs,
           500,
@@ -1363,9 +1623,14 @@ export async function runMultiTurnVoiceQa(
           previousTutorResponse = tutorResponse;
         }
 
-        // Capture screenshot
+        // Calculate response latency (prompt end → first tutor response)
+        const responseLatencyMs =
+          tutorResponse && responseDetectedAt ? responseDetectedAt - promptEndWallMs : undefined;
+
+        // After screenshot + canvas checksum
         const screenshotPath = path.join(evidenceDir, `turn-${i}-${Date.now()}.png`);
         await page.screenshot({ path: screenshotPath, fullPage: true });
+        const checksumAfter = await captureCanvasChecksum(page);
 
         // Extract tool calls from console logs during this turn
         const logEndIdx = allConsoleLogs.length;
@@ -1403,12 +1668,18 @@ export async function runMultiTurnVoiceQa(
         }
 
         // Grade this turn
+        const turnCanvasChange: CanvasChangeInfo = {
+          checksumBefore,
+          checksumAfter,
+          changed: checksumBefore !== checksumAfter,
+        };
         const grade = gradeTurn(
           turn,
           tutorResponse ?? null,
           toolCalls,
           visualAssessment,
           turnErrors,
+          turnCanvasChange,
         );
 
         // Inspect page health (what a human would see)
@@ -1422,9 +1693,16 @@ export async function runMultiTurnVoiceQa(
           keywords: grade.keywords,
           visualAssessment,
           ttsEngine: ttsEngines[i],
+          responseLatencyMs,
           passed: grade.passed,
           failReasons: grade.failReasons,
           screenshotPath,
+          screenshots: { before: beforePath, after: screenshotPath },
+          canvasChange: {
+            checksumBefore,
+            checksumAfter,
+            changed: checksumBefore !== checksumAfter,
+          },
           consoleErrors: turnErrors,
           consoleLogs: turnLogs,
           pageHealth,
@@ -1441,6 +1719,21 @@ export async function runMultiTurnVoiceQa(
       const finalPath = path.join(evidenceDir, `final-${Date.now()}.png`);
       await page.screenshot({ path: finalPath, fullPage: true });
 
+      // Close page to finalize video recording
+      await page.close();
+
+      // Retrieve video path (Playwright saves it after page close)
+      let videoPath: string | undefined;
+      try {
+        const video = page.video();
+        if (video) {
+          videoPath = await video.path();
+          allConsoleLogs.push(`[voice-qa] Session video saved: ${videoPath}`);
+        }
+      } catch {
+        allConsoleLogs.push("[voice-qa] Video recording not available");
+      }
+
       return {
         scriptName: script.name,
         turns,
@@ -1450,6 +1743,7 @@ export async function runMultiTurnVoiceQa(
         wsEvents,
         overallConsoleErrors: allConsoleErrors,
         overallConsoleLogs: allConsoleLogs,
+        videoPath,
       };
     } finally {
       await browser.close();

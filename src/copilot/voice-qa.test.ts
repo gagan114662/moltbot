@@ -3,9 +3,11 @@ import os from "node:os";
 import path from "node:path";
 import { afterEach, describe, expect, it } from "vitest";
 import type { MultiTurnResult, TurnResult, VisualAssessment } from "./voice-qa.js";
+import type { CanvasChangeInfo, ScreenshotSet } from "./voice-qa.js";
 import {
   assertVoicePlatform,
   buildVoiceArgs,
+  captureCanvasChecksum,
   ELEMENTARY_MATH_SCRIPT,
   extractPcmData,
   formatMultiTurnReport,
@@ -399,6 +401,57 @@ describe("voice-qa", () => {
       expect(result.issues).toHaveLength(1);
       expect(result.issues[0].description).toBe("Real issue");
     });
+
+    it("parses pedagogyScore when present", () => {
+      const raw = JSON.stringify({
+        score: 80,
+        canvasDescription: "Number line showing 2+2=4",
+        drawingCorrect: true,
+        issues: [],
+        pedagogyScore: {
+          explanationClarity: 4,
+          drawingRelevance: 5,
+          ageAppropriateness: 5,
+          drawingMatchesClaim: true,
+        },
+      });
+      const result = parseVisualAssessment(raw);
+      expect(result.pedagogyScore).toBeDefined();
+      expect(result.pedagogyScore!.explanationClarity).toBe(4);
+      expect(result.pedagogyScore!.drawingRelevance).toBe(5);
+      expect(result.pedagogyScore!.ageAppropriateness).toBe(5);
+      expect(result.pedagogyScore!.drawingMatchesClaim).toBe(true);
+    });
+
+    it("clamps out-of-range pedagogy scores to 1-5", () => {
+      const raw = JSON.stringify({
+        score: 60,
+        canvasDescription: "Content",
+        drawingCorrect: true,
+        issues: [],
+        pedagogyScore: {
+          explanationClarity: 0,
+          drawingRelevance: 8,
+          ageAppropriateness: -1,
+          drawingMatchesClaim: false,
+        },
+      });
+      const result = parseVisualAssessment(raw);
+      expect(result.pedagogyScore!.explanationClarity).toBe(1);
+      expect(result.pedagogyScore!.drawingRelevance).toBe(5);
+      expect(result.pedagogyScore!.ageAppropriateness).toBe(1);
+    });
+
+    it("returns undefined pedagogyScore when not in response", () => {
+      const raw = JSON.stringify({
+        score: 70,
+        canvasDescription: "Canvas",
+        drawingCorrect: true,
+        issues: [],
+      });
+      const result = parseVisualAssessment(raw);
+      expect(result.pedagogyScore).toBeUndefined();
+    });
   });
 
   describe("formatMultiTurnReport", () => {
@@ -549,6 +602,39 @@ describe("voice-qa", () => {
         });
         expect(result).toBeInstanceOf(Promise);
       }
+    });
+  });
+
+  describe("captureCanvasChecksum", () => {
+    it("is exported as an async function", () => {
+      expect(typeof captureCanvasChecksum).toBe("function");
+    });
+  });
+
+  describe("ScreenshotSet and CanvasChangeInfo types", () => {
+    it("ScreenshotSet accepts before/after paths", () => {
+      const ss: ScreenshotSet = { before: "/tmp/before.png", after: "/tmp/after.png" };
+      expect(ss.before).toBe("/tmp/before.png");
+      expect(ss.after).toBe("/tmp/after.png");
+    });
+
+    it("CanvasChangeInfo tracks checksum changes", () => {
+      const ci: CanvasChangeInfo = {
+        checksumBefore: "abc123",
+        checksumAfter: "def456",
+        changed: true,
+      };
+      expect(ci.changed).toBe(true);
+      expect(ci.checksumBefore).not.toBe(ci.checksumAfter);
+    });
+
+    it("CanvasChangeInfo unchanged when checksums match", () => {
+      const ci: CanvasChangeInfo = {
+        checksumBefore: "abc123",
+        checksumAfter: "abc123",
+        changed: false,
+      };
+      expect(ci.changed).toBe(false);
     });
   });
 });
