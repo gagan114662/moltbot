@@ -12,24 +12,43 @@ import { execSync } from "node:child_process";
 import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
+import type { AgentDriver } from "./agent-driver.js";
 import type { FeedbackContext } from "./feedback.js";
+import type { IterationRecordLike } from "./iteration-briefing.js";
+import type { OvernightState } from "./overnight-types.js";
 import type { CopilotFeedback, StageResult } from "./types.js";
 import type { BehavioralObservation, ProjectWarning } from "./types.js";
 import type {
   Diagnosis,
   EnrichedVoiceQaResult,
+  ExperienceScorecard,
   IterationContext,
   ScreenshotDescription,
   SourceFile,
 } from "./voice-qa-diagnosis.js";
 import type { MultiTurnResult, StudentScript, VoiceQaResult, VisualQaConfig } from "./voice-qa.js";
+import { qaIterationToRecord } from "../context/adapters/qa-adapter.js";
+import { materializeContext } from "../context/materialize.js";
+import { ContextStore } from "../context/store.js";
+import { TmuxClaudeDriver } from "./agent-driver.js";
 import { resolveChromePath } from "./browser-inspect.js";
+import {
+  createCheckpoint,
+  countCheckpointsSince,
+  getCurrentHead,
+  rollbackToCheckpoint,
+  squashCheckpoints,
+} from "./checkpoint.js";
 import { writeFeedbackToTarget } from "./feedback.js";
-import { pollForClaudeState, tmuxCaptureScrollback, tmuxSendKeys } from "./tmux-send.js";
+import { buildIterationBriefing, serializeBriefingAsSystemPrompt } from "./iteration-briefing.js";
+import { tmuxCaptureScrollback } from "./tmux-send.js";
+import { runValidationPipeline } from "./validation-gates.js";
 import {
   buildBehavioralObservations,
+  buildCodeReviewPrompt,
   buildContextualNudge,
   buildLlmDiagnosisPrompt,
+  buildOneShotAnalysisPrompt,
   buildPlanReviewPrompt,
   buildSeniorNudgeFallback,
   buildSeniorNudgePrompt,
@@ -39,7 +58,9 @@ import {
   matchProjectKnowledge,
   mergeDiagnoses,
   parseLlmDiagnosis,
+  parseOneShotResponse,
 } from "./voice-qa-diagnosis.js";
+import { appendScoreResult, formatTrendReport } from "./voice-qa-trends.js";
 import {
   ELEMENTARY_MATH_SCRIPT,
   formatMultiTurnReport,
@@ -57,6 +78,8 @@ export type VoiceQaLoopParams = {
   targetCwd: string;
   /** Tmux pane to nudge (e.g. "scratchpad:0.0") */
   tmuxTarget: string;
+  /** Pluggable agent driver. When provided, replaces tmux for feedback delivery. */
+  agentDriver?: AgentDriver;
   /** Max retry iterations (default 5) */
   maxIterations?: number;
   /** Consecutive identical-failure limit before early exit (default 2) */
@@ -75,12 +98,28 @@ export type VoiceQaLoopParams = {
   /** Source files to include in LLM diagnosis prompt (relative to targetCwd).
    *  Codex reads these to give specific file:line fixes. */
   sourceFiles?: string[];
+  /** LLM-powered screenshot description callback. Receives a screenshot path
+   *  and a prompt, returns a human-readable description of what's on screen.
+   *  Used for the nudge prompt and QA-FEEDBACK.md. */
+  agentDescribeScreenshot?: (screenshotPath: string, prompt: string) => Promise<string>;
+  /** One-shot multimodal analysis callback. Receives a text prompt and optional
+   *  images, returns a response containing both nudge and diagnosis.
+   *  When provided, replaces the 3-call pipeline (diagnose + describe + nudge)
+   *  with a single multimodal call. */
+  agentAnalyze?: (
+    prompt: string,
+    images?: Array<{ path: string; label: string }>,
+  ) => Promise<string>;
   /** Multi-turn student script. When provided, uses multi-turn mode. */
   script?: StudentScript;
   /** Visual QA config for screenshot analysis (multi-turn only). */
   visualQa?: VisualQaConfig;
   /** Prompts for single-prompt mode. Ignored when script is provided. */
   prompts?: string[];
+  /** Enable git checkpoints before each agent run. Allows rollback of bad changes on stall. */
+  enableCheckpoints?: boolean;
+  /** Overnight loop state — passed to iteration briefing for cross-cycle context. */
+  overnightState?: OvernightState;
 };
 
 export type VoiceQaLoopResult = {
@@ -94,6 +133,8 @@ export type VoiceQaLoopResult = {
   lastMultiTurnResult?: MultiTurnResult;
   /** Full iteration history for debugging / logging. */
   iterationHistory?: IterationRecord[];
+  /** Last experience scorecard from one-shot analysis. */
+  lastScorecard?: ExperienceScorecard;
 };
 
 // ---------------------------------------------------------------------------
@@ -110,7 +151,7 @@ type IterationObservation = {
 };
 
 /** Record of a single iteration for history threading. */
-type IterationRecord = {
+export type IterationRecord = {
   iteration: number;
   diagnoses: Diagnosis[];
   behavioral: BehavioralObservation[];
@@ -118,6 +159,7 @@ type IterationRecord = {
   nudgeSent: string;
   observation: IterationObservation | null;
   passed: boolean;
+  scorecard?: ExperienceScorecard | null;
 };
 
 /** Fingerprint a set of enriched results for stall detection. */
@@ -165,6 +207,9 @@ function multiTurnToEnriched(result: MultiTurnResult): EnrichedVoiceQaResult[] {
     toolCalls: t.toolCalls,
     visualAssessment: t.visualAssessment,
     pageHealth: t.pageHealth,
+    responseLatencyMs: t.responseLatencyMs,
+    screenshots: t.screenshots,
+    canvasChange: t.canvasChange,
   }));
 }
 
@@ -182,7 +227,8 @@ function buildChecks(enriched: EnrichedVoiceQaResult[]) {
 // Observation helpers (Think-Act-Observe)
 // ---------------------------------------------------------------------------
 
-/** Capture git diff from the target repo. Cascading fallback: committed → staged → unstaged. */
+/** Capture git diff from the target repo. Cascading fallback: committed → staged → unstaged.
+ *  Handles repos with zero commits (empty HEAD) gracefully. */
 function captureTargetDiff(targetCwd: string): {
   diffStat: string;
   diffFull: string;
@@ -190,32 +236,55 @@ function captureTargetDiff(targetCwd: string): {
 } {
   const run = (args: string): string => {
     try {
-      return execSync(`git ${args}`, { cwd: targetCwd, encoding: "utf-8", timeout: 10_000 }).trim();
+      return execSync(`git ${args}`, {
+        cwd: targetCwd,
+        encoding: "utf-8",
+        timeout: 10_000,
+        stdio: ["pipe", "pipe", "pipe"], // suppress stderr noise
+      }).trim();
     } catch {
       return "";
     }
   };
 
-  // Try committed changes first (Claude may have committed)
-  let diffStat = run("diff --stat HEAD~1");
-  let diffFull = run("diff HEAD~1");
-  let nameOnly = run("diff --name-only HEAD~1");
+  // Check if HEAD exists (repo may have zero commits)
+  const hasHead = run("rev-parse HEAD") !== "";
 
-  // If no committed changes, try working tree vs HEAD
-  if (!diffFull) {
-    diffStat = run("diff --stat HEAD");
-    diffFull = run("diff HEAD");
-    nameOnly = run("diff --name-only HEAD");
+  if (hasHead) {
+    // Try committed changes first (Claude may have committed)
+    let diffStat = run("diff --stat HEAD~1");
+    let diffFull = run("diff HEAD~1");
+    let nameOnly = run("diff --name-only HEAD~1");
+
+    // If no committed changes, try working tree vs HEAD
+    if (!diffFull) {
+      diffStat = run("diff --stat HEAD");
+      diffFull = run("diff HEAD");
+      nameOnly = run("diff --name-only HEAD");
+    }
+
+    // Last resort: unstaged only
+    if (!diffFull) {
+      diffStat = run("diff --stat");
+      diffFull = run("diff");
+      nameOnly = run("diff --name-only");
+    }
+
+    const changedFiles = nameOnly ? nameOnly.split("\n").filter(Boolean) : [];
+    return { diffStat, diffFull, changedFiles };
   }
 
-  // Last resort: unstaged only
-  if (!diffFull) {
-    diffStat = run("diff --stat");
-    diffFull = run("diff");
-    nameOnly = run("diff --name-only");
-  }
+  // No HEAD — repo has zero commits. Use git status + unstaged diff.
+  const porcelain = run("status --porcelain");
+  const changedFiles = porcelain
+    ? porcelain
+        .split("\n")
+        .filter(Boolean)
+        .map((line) => line.slice(3).trim())
+    : [];
+  const diffFull = run("diff");
+  const diffStat = run("diff --stat");
 
-  const changedFiles = nameOnly ? nameOnly.split("\n").filter(Boolean) : [];
   return { diffStat, diffFull, changedFiles };
 }
 
@@ -320,6 +389,7 @@ async function runDiagnosis(
         tmuxScrollbackTail: (h.observation?.tmuxScrollback ?? "").split("\n").slice(-30).join("\n"),
         diffMatchResult: h.observation?.diffMatchResult ?? "unknown",
         previousDiagnoses: h.diagnoses.map((d) => d.rootCause),
+        diffSnippet: h.observation?.diffFull?.slice(0, 3000) || undefined,
       }));
 
       const prompt = buildLlmDiagnosisPrompt(
@@ -351,12 +421,30 @@ export async function runVoiceQaLoop(params: VoiceQaLoopParams): Promise<VoiceQa
   const isMultiTurn = !!params.script;
   const prompts = params.prompts ?? ["What is two plus two?"];
 
+  // Resolve agent driver: explicit > tmux fallback
+  const driver: AgentDriver = params.agentDriver ?? new TmuxClaudeDriver(params.tmuxTarget);
+  const isLegacyTmux = driver.name === "claude-tmux";
+
   let lastFingerprint = "";
   let consecutiveStalls = 0;
   let lastReport = "";
   let lastResults: VoiceQaResult[] | undefined;
   let lastMultiTurnResult: MultiTurnResult | undefined;
+  let lastScorecard: ExperienceScorecard | undefined;
   const iterationHistory: IterationRecord[] = [];
+
+  // RLM context store — persists full iteration data for rich context access
+  const contextStore = new ContextStore();
+  const loopId = `qa-${Date.now()}`;
+
+  // Checkpoint state
+  const useCheckpoints = params.enableCheckpoints ?? false;
+  const baseHead = useCheckpoints ? getCurrentHead(params.targetCwd) : null;
+  /** SHA to rollback to when stalled — the checkpoint from before the first stalling iteration. */
+  let rollbackSha: string | null = null;
+  if (useCheckpoints && baseHead) {
+    params.onProgress?.(`Checkpoints enabled. Base HEAD: ${baseHead.slice(0, 8)}`);
+  }
 
   for (let i = 1; i <= maxIterations; i++) {
     const evidenceDir = path.join(os.tmpdir(), `voice-qa-evidence-${Date.now()}`);
@@ -408,22 +496,178 @@ export async function runVoiceQaLoop(params: VoiceQaLoopParams): Promise<VoiceQa
       }));
     }
 
-    // Run diagnosis (static + LLM)
-    const diagnoses = allPassed ? [] : await runDiagnosis(enriched, params, i, iterationHistory);
-
-    // Build behavioral observations + project warnings + screenshot descriptions
+    // Build behavioral observations + project warnings (needed for all paths)
     const behavioral = allPassed ? [] : buildBehavioralObservations(enriched);
     const prevObs = iterationHistory.at(-1)?.observation;
-    const projectWarnings = matchProjectKnowledge(prevObs?.diffFull ?? "");
-    const screenshotDescs: ScreenshotDescription[] = enriched
-      .filter((r): r is typeof r & { visualAssessment: { canvasDescription: string } } =>
-        Boolean(r.visualAssessment?.canvasDescription),
-      )
-      .map((r) => ({
-        turn: r.prompt?.slice(0, 40) ?? "unknown",
-        description: r.visualAssessment.canvasDescription,
-        path: r.screenshotPath ?? "",
+    let projectWarnings: ProjectWarning[];
+    if (prevObs?.diffFull) {
+      projectWarnings = matchProjectKnowledge(prevObs.diffFull);
+    } else if (params.sourceFiles && params.targetCwd) {
+      const sourceContent = params.sourceFiles
+        .map((f) => {
+          try {
+            return fs.readFileSync(path.join(params.targetCwd, f), "utf-8");
+          } catch {
+            return "";
+          }
+        })
+        .join("\n");
+      projectWarnings = matchProjectKnowledge(sourceContent);
+    } else {
+      projectWarnings = [];
+    }
+
+    // === ONE-SHOT PATH: single multimodal call when agentAnalyze is available ===
+    let diagnoses: Diagnosis[] = [];
+    let nudge = "";
+    let oneShotScorecard: ExperienceScorecard | undefined;
+
+    if (!allPassed && params.agentAnalyze) {
+      params.onProgress?.(`Running one-shot multimodal analysis (iteration ${i})...`);
+
+      // Static diagnoses for context
+      const staticDiagnoses = diagnose(enriched);
+
+      // Load source files
+      const codeFiles: SourceFile[] = [];
+      if (params.sourceFiles && params.targetCwd) {
+        for (const relPath of params.sourceFiles) {
+          try {
+            const absPath = path.join(params.targetCwd, relPath);
+            const content = fs.readFileSync(absPath, "utf-8");
+            const numbered = content
+              .split("\n")
+              .map((line, idx) => `${idx + 1}: ${line}`)
+              .join("\n");
+            codeFiles.push({ path: relPath, content: numbered });
+          } catch {
+            // File not found — skip
+          }
+        }
+      }
+
+      // Build iteration context
+      const iterationContext: IterationContext[] = iterationHistory.map((h) => ({
+        iteration: h.iteration,
+        nudgeSent: h.nudgeSent,
+        diffStat: h.observation?.diffStat ?? "",
+        changedFiles: h.observation?.changedFiles ?? [],
+        tmuxScrollbackTail: (h.observation?.tmuxScrollback ?? "").split("\n").slice(-30).join("\n"),
+        diffMatchResult: h.observation?.diffMatchResult ?? "unknown",
+        previousDiagnoses: h.diagnoses.map((d) => d.rootCause),
+        diffSnippet: h.observation?.diffFull?.slice(0, 3000) || undefined,
       }));
+
+      // Build ONE prompt
+      const analysisPrompt = buildOneShotAnalysisPrompt(
+        enriched,
+        behavioral,
+        projectWarnings,
+        staticDiagnoses,
+        codeFiles.length > 0 ? codeFiles : undefined,
+        iterationContext.length > 0 ? iterationContext : undefined,
+        i,
+        maxIterations,
+      );
+
+      // Collect screenshot images for multimodal call
+      const images: Array<{ path: string; label: string }> = [];
+      for (const r of enriched) {
+        if (r.screenshots?.before) {
+          images.push({
+            path: r.screenshots.before,
+            label: `Before: ${r.prompt?.slice(0, 30) ?? "turn"}`,
+          });
+        }
+        if (r.screenshots?.after) {
+          images.push({
+            path: r.screenshots.after,
+            label: `After: ${r.prompt?.slice(0, 30) ?? "turn"}`,
+          });
+        } else if (r.screenshotPath) {
+          images.push({
+            path: r.screenshotPath,
+            label: `Screenshot: ${r.prompt?.slice(0, 30) ?? "turn"}`,
+          });
+        }
+      }
+
+      try {
+        const response = await params.agentAnalyze(
+          analysisPrompt,
+          images.length > 0 ? images : undefined,
+        );
+        const parsed = parseOneShotResponse(response);
+
+        // Merge LLM diagnoses with static
+        if (parsed.diagnoses.length > 0) {
+          diagnoses = mergeDiagnoses(staticDiagnoses, parsed.diagnoses);
+        } else {
+          diagnoses = staticDiagnoses;
+        }
+
+        nudge = parsed.nudge.slice(0, 2000);
+        oneShotScorecard = parsed.scorecard;
+        params.onProgress?.(
+          `One-shot analysis: ${parsed.diagnoses.length} LLM diagnosis(es), nudge ${nudge.length} chars` +
+            (oneShotScorecard ? `, score ${oneShotScorecard.overall}/10` : ""),
+        );
+      } catch (err: unknown) {
+        params.onProgress?.(`One-shot analysis failed, falling back: ${String(err)}`);
+        diagnoses = staticDiagnoses;
+        // Fall through to legacy nudge below
+      }
+    } else if (!allPassed) {
+      // === LEGACY PATH: 3-call pipeline (diagnose + describe + nudge) ===
+      diagnoses = await runDiagnosis(enriched, params, i, iterationHistory);
+    }
+
+    // Build screenshot descriptions (used by feedback + legacy nudge fallback)
+    const screenshotDescs: ScreenshotDescription[] = [];
+    const screenshotCandidates = enriched.filter((r) => r.screenshotPath);
+
+    if (!params.agentAnalyze && params.agentDescribeScreenshot && screenshotCandidates.length > 0) {
+      // Legacy path: LLM vision for screenshot descriptions
+      const SCREENSHOT_PROMPT =
+        "Describe this web app screenshot in 2-3 sentences as a QA tester would. " +
+        "What buttons are visible? Is the session connected (look for 'Start Session' vs 'End Session')? " +
+        "Are there error toasts or warnings? Is the scratchpad canvas showing content or blank? " +
+        "Is the 'Enable Audio' button visible/pulsing? Name the actors: Adam = tutor, Maya = student.";
+      for (const r of screenshotCandidates) {
+        try {
+          const desc = await params.agentDescribeScreenshot(r.screenshotPath!, SCREENSHOT_PROMPT);
+          screenshotDescs.push({
+            turn: r.prompt?.slice(0, 40) ?? "unknown",
+            description: desc.trim().slice(0, 500),
+            path: r.screenshotPath!,
+          });
+        } catch (err) {
+          params.onProgress?.(`Screenshot vision failed for turn: ${String(err)}`);
+          screenshotDescs.push({
+            turn: r.prompt?.slice(0, 40) ?? "unknown",
+            description:
+              r.visualAssessment?.canvasDescription ?? "Vision model failed — see screenshot",
+            path: r.screenshotPath!,
+          });
+        }
+      }
+      params.onProgress?.(`Vision model described ${screenshotDescs.length} screenshot(s)`);
+    } else {
+      // Fallback — rule-based descriptions
+      for (const r of screenshotCandidates) {
+        screenshotDescs.push({
+          turn: r.prompt?.slice(0, 40) ?? "unknown",
+          description:
+            r.visualAssessment?.canvasDescription ??
+            (r.pageHealth?.sessionConnected === false
+              ? "Session disconnected — page shows 'Start Session' button"
+              : r.tutorResponse
+                ? "Tutor responded but no visual assessment available"
+                : "No tutor response — page state unknown (see screenshot)"),
+          path: r.screenshotPath!,
+        });
+      }
+    }
 
     // Build enriched feedback context for QA-FEEDBACK.md
     const feedbackContext: FeedbackContext = {
@@ -456,7 +700,23 @@ export async function runVoiceQaLoop(params: VoiceQaLoopParams): Promise<VoiceQa
 
     if (allPassed) {
       params.onProgress?.(`Voice QA iteration ${i}/${maxIterations}: PASSED`);
-      tmuxSendKeys(params.tmuxTarget, "Voice QA PASSED — all prompts answered correctly.");
+
+      // Squash checkpoint commits on success (clean git history)
+      if (useCheckpoints && baseHead && i > 1) {
+        const checkpointCount = countCheckpointsSince(params.targetCwd, baseHead);
+        if (checkpointCount > 0) {
+          params.onProgress?.(
+            `Squashing ${checkpointCount} checkpoint commit(s) into one clean commit...`,
+          );
+          squashCheckpoints(params.targetCwd, baseHead);
+        }
+      }
+
+      try {
+        await driver.sendFeedback("Voice QA PASSED — all prompts answered correctly.");
+      } catch {
+        // Non-fatal if agent driver fails on success message
+      }
       return {
         ok: true,
         iterations: i,
@@ -465,6 +725,7 @@ export async function runVoiceQaLoop(params: VoiceQaLoopParams): Promise<VoiceQa
         lastResults,
         lastMultiTurnResult,
         iterationHistory,
+        lastScorecard,
       };
     }
 
@@ -484,11 +745,32 @@ export async function runVoiceQaLoop(params: VoiceQaLoopParams): Promise<VoiceQa
     lastFingerprint = fp;
 
     if (consecutiveStalls >= stallLimit) {
+      // Rollback to the checkpoint before the stall started
+      if (useCheckpoints && rollbackSha) {
+        params.onProgress?.(
+          `Stall detected — rolling back to checkpoint ${rollbackSha.slice(0, 8)}`,
+        );
+        const rolled = rollbackToCheckpoint(params.targetCwd, rollbackSha);
+        if (rolled) {
+          params.onProgress?.(
+            `Rollback successful. Bad changes from stalling iterations reverted.`,
+          );
+        } else {
+          params.onProgress?.(`Rollback failed — manual intervention may be needed.`);
+        }
+      }
+
       params.onProgress?.(`Voice QA stuck after ${i} iterations — same error repeating. Stopping.`);
-      tmuxSendKeys(
-        params.tmuxTarget,
-        "Voice QA stuck — same error after multiple fix attempts. Manual intervention needed.",
-      );
+      try {
+        await driver.sendFeedback(
+          "Voice QA stuck — same error after multiple fix attempts. Manual intervention needed." +
+            (useCheckpoints && rollbackSha
+              ? " Bad changes have been rolled back to the pre-stall checkpoint."
+              : ""),
+        );
+      } catch {
+        // Non-fatal
+      }
       return {
         ok: false,
         iterations: i,
@@ -497,31 +779,44 @@ export async function runVoiceQaLoop(params: VoiceQaLoopParams): Promise<VoiceQa
         lastResults,
         lastMultiTurnResult,
         iterationHistory,
+        lastScorecard,
       };
     }
 
-    // === ACT: Send senior engineer nudge to Claude ===
+    // === ACT: Send nudge to Claude ===
     params.onProgress?.(
       `Voice QA iteration ${i}/${maxIterations}: FAILED — nudging Claude to fix...`,
     );
-    let nudge: string;
-    if (params.agentDiagnose && (behavioral.length > 0 || diagnoses.length > 0)) {
-      // LLM-composed nudge (senior engineer style)
-      try {
-        const nudgePrompt = buildSeniorNudgePrompt(
-          behavioral,
-          projectWarnings,
-          diagnoses,
-          i,
-          maxIterations,
-          prevObs?.diffStat,
-          screenshotDescs.length > 0 ? screenshotDescs : undefined,
-        );
-        const llmNudge = await params.agentDiagnose(nudgePrompt);
-        nudge = llmNudge.trim().slice(0, 1000);
-        params.onProgress?.(`LLM composed senior engineer nudge (${nudge.length} chars)`);
-      } catch (err: unknown) {
-        params.onProgress?.(`LLM nudge failed (non-fatal): ${String(err)}`);
+
+    // One-shot path already produced the nudge — use it if non-empty
+    if (!nudge) {
+      // Legacy path: compose nudge from behavioral + diagnoses
+      if (params.agentDiagnose && (behavioral.length > 0 || diagnoses.length > 0)) {
+        try {
+          const nudgePrompt = buildSeniorNudgePrompt(
+            behavioral,
+            projectWarnings,
+            diagnoses,
+            i,
+            maxIterations,
+            prevObs?.diffStat,
+            screenshotDescs.length > 0 ? screenshotDescs : undefined,
+          );
+          const llmNudge = await params.agentDiagnose(nudgePrompt);
+          nudge = llmNudge.trim().slice(0, 2000);
+          params.onProgress?.(`LLM composed senior engineer nudge (${nudge.length} chars)`);
+        } catch (err: unknown) {
+          params.onProgress?.(`LLM nudge failed (non-fatal): ${String(err)}`);
+          nudge = buildSeniorNudgeFallback(
+            behavioral,
+            projectWarnings,
+            diagnoses,
+            i,
+            maxIterations,
+            screenshotDescs.length > 0 ? screenshotDescs : undefined,
+          );
+        }
+      } else if (behavioral.length > 0) {
         nudge = buildSeniorNudgeFallback(
           behavioral,
           projectWarnings,
@@ -530,38 +825,130 @@ export async function runVoiceQaLoop(params: VoiceQaLoopParams): Promise<VoiceQa
           maxIterations,
           screenshotDescs.length > 0 ? screenshotDescs : undefined,
         );
+      } else if (diagnoses.length > 0) {
+        nudge = buildContextualNudge(
+          i,
+          maxIterations,
+          diagnoses,
+          prevObs
+            ? { changedFiles: prevObs.changedFiles, diffMatchResult: prevObs.diffMatchResult }
+            : null,
+        );
+      } else {
+        nudge = buildNudge(i, maxIterations, enriched);
       }
-    } else if (behavioral.length > 0) {
-      // Fallback: template-based senior nudge
-      nudge = buildSeniorNudgeFallback(
-        behavioral,
-        projectWarnings,
-        diagnoses,
-        i,
-        maxIterations,
-        screenshotDescs.length > 0 ? screenshotDescs : undefined,
-      );
-    } else if (diagnoses.length > 0) {
-      // Fallback: contextual nudge with diagnosis
-      nudge = buildContextualNudge(
-        i,
-        maxIterations,
-        diagnoses,
-        prevObs
-          ? { changedFiles: prevObs.changedFiles, diffMatchResult: prevObs.diffMatchResult }
-          : null,
-      );
-    } else {
-      nudge = buildNudge(i, maxIterations, enriched);
     }
-    tmuxSendKeys(params.tmuxTarget, nudge);
+    // Surface scorecard in progress
+    if (oneShotScorecard) {
+      lastScorecard = oneShotScorecard;
+      params.onProgress?.(
+        `Khan Academy Score: ${oneShotScorecard.overall}/10 — ` +
+          (oneShotScorecard.khanComparison || "no comparison available"),
+      );
+      // Persist score for trending
+      try {
+        appendScoreResult(oneShotScorecard, {
+          script: isMultiTurn ? (params.script?.name ?? "unknown") : "single-prompt",
+          iterations: i,
+          passed: false,
+          agent: driver.name,
+        });
+      } catch {
+        // Non-fatal
+      }
+      // Show trend if available
+      try {
+        const trend = formatTrendReport(
+          isMultiTurn ? (params.script?.name ?? "unknown") : "single-prompt",
+        );
+        if (trend && !trend.includes("No score history")) {
+          params.onProgress?.(`Trend: ${trend}`);
+        }
+      } catch {
+        // Non-fatal
+      }
+    }
 
-    // === WAIT: Claude works on fix (detect idle vs plan-mode) ===
-    const claudeState = await pollForClaudeState(params.tmuxTarget, {
-      timeoutMs: claudeTimeoutMs,
-    });
-    if (claudeState.timedOut) {
-      params.onProgress?.(`Claude didn't finish within timeout. Stopping.`);
+    params.onProgress?.(`Nudge text:\n${nudge}`);
+
+    // === CHECKPOINT: snapshot before agent modifies code ===
+    if (useCheckpoints) {
+      const checkpointSha = createCheckpoint(params.targetCwd, `pre-iteration-${i}`);
+      if (checkpointSha) {
+        params.onProgress?.(`Checkpoint: ${checkpointSha.slice(0, 8)} (pre-iteration ${i})`);
+        // Record the rollback target: the checkpoint before the first stalling iteration
+        if (consecutiveStalls === 0) {
+          rollbackSha = checkpointSha;
+        }
+      }
+    }
+
+    // === RLM CONTEXT: Materialize rich context files for fresh-context drivers ===
+    let contextDir: string | undefined;
+    if (driver.setSystemPromptContext && iterationHistory.length > 0) {
+      try {
+        contextDir = path.join(params.targetCwd, ".qa-context");
+        const topDiagnosisId = diagnoses[0]?.id;
+        const strategies: import("../context/types.js").MaterializeStrategy[] = [
+          { kind: "recency", count: 10 },
+        ];
+        if (topDiagnosisId) {
+          strategies.push({ kind: "tagged", tags: [`diagnosis:${topDiagnosisId}`] });
+        }
+        await materializeContext(contextStore, loopId, {
+          outputDir: contextDir,
+          tokenBudget: 4000,
+          strategies,
+          llmSummarize: params.agentDiagnose,
+        });
+        params.onProgress?.(`RLM: materialized context to ${contextDir}`);
+      } catch (err) {
+        params.onProgress?.(`RLM materialize failed (non-fatal): ${String(err)}`);
+        contextDir = undefined;
+      }
+    }
+
+    // === BRIEFING: Set iteration context for fresh-context drivers ===
+    if (driver.setSystemPromptContext) {
+      const briefingHistory: IterationRecordLike[] = iterationHistory.map((r) => ({
+        iteration: r.iteration,
+        diagnoses: r.diagnoses.map((d) => ({
+          rootCause: d.rootCause,
+          suggestedFix: d.suggestedFix,
+        })),
+        nudgeSent: r.nudgeSent,
+        observation: r.observation
+          ? {
+              changedFiles: r.observation.changedFiles,
+              diffMatchResult: r.observation.diffMatchResult,
+            }
+          : null,
+        passed: r.passed,
+        scorecard: r.scorecard ?? null,
+      }));
+      const briefing = buildIterationBriefing(briefingHistory, {
+        currentIteration: i,
+        maxIterations,
+        focusFiles: params.sourceFiles ?? [],
+        projectWarnings: projectWarnings.map((w) => w.warning),
+        overnightState: params.overnightState,
+        contextDir,
+      });
+      driver.setSystemPromptContext(serializeBriefingAsSystemPrompt(briefing));
+    }
+
+    // === ACT: Send feedback via agent driver ===
+    const feedbackPath = path.join(params.targetCwd, "QA-FEEDBACK.md");
+    try {
+      await driver.sendFeedback(nudge, feedbackPath);
+    } catch (err) {
+      params.onProgress?.(`Agent driver sendFeedback failed: ${String(err)}`);
+    }
+
+    // === WAIT: Agent works on fix ===
+    const agentResult = await driver.waitForCompletion(claudeTimeoutMs);
+    if (agentResult.timedOut) {
+      params.onProgress?.(`Agent didn't finish within timeout. Stopping.`);
       return {
         ok: false,
         iterations: i,
@@ -570,59 +957,54 @@ export async function runVoiceQaLoop(params: VoiceQaLoopParams): Promise<VoiceQa
         lastResults,
         lastMultiTurnResult,
         iterationHistory,
+        lastScorecard,
       };
     }
 
-    // If Claude is in plan-mode, review the plan before waiting for implementation
-    if (claudeState.state === "plan-mode") {
-      params.onProgress?.(`Claude is in plan mode — reviewing plan...`);
+    // Plan-mode handling (only relevant for tmux-based drivers)
+    if (agentResult.state === "plan-mode" && isLegacyTmux) {
+      params.onProgress?.(`Agent is in plan mode — reviewing plan...`);
+      const planContent = agentResult.planContent ?? "";
       if (params.agentDiagnose) {
         try {
-          const planWarnings = matchProjectKnowledge(claudeState.planContent);
+          const planWarnings = matchProjectKnowledge(planContent);
           const allWarnings = [
             ...projectWarnings,
             ...planWarnings.filter((w) => !projectWarnings.some((pw) => pw.id === w.id)),
           ];
-          const reviewPrompt = buildPlanReviewPrompt(
-            claudeState.planContent,
-            behavioral,
-            allWarnings,
-          );
+          const reviewPrompt = buildPlanReviewPrompt(planContent, behavioral, allWarnings);
           const review = await params.agentDiagnose(reviewPrompt);
           const reviewText = review.trim().slice(0, 500);
-          tmuxSendKeys(params.tmuxTarget, `Quick note on your plan: ${reviewText}`);
-          params.onProgress?.(`Sent plan review feedback to Claude`);
+          await driver.sendFeedback(`Quick note on your plan: ${reviewText}`);
+          params.onProgress?.(`Sent plan review feedback to agent`);
         } catch (err: unknown) {
           params.onProgress?.(`Plan review failed (non-fatal): ${String(err)}`);
-          // Fallback: scan plan against project knowledge
-          const planWarnings = matchProjectKnowledge(claudeState.planContent);
+          const planWarnings = matchProjectKnowledge(planContent);
           if (planWarnings.length > 0) {
             const warnText = planWarnings.map((w) => w.warning.split(".")[0]).join(". ");
-            tmuxSendKeys(
-              params.tmuxTarget,
-              `Heads up on your plan: ${warnText}. Keep these in mind.`,
-            );
+            try {
+              await driver.sendFeedback(`Heads up on your plan: ${warnText}. Keep these in mind.`);
+            } catch {
+              /* Non-fatal */
+            }
           }
         }
       } else {
-        // No LLM: scan plan against project knowledge as best-effort
-        const planWarnings = matchProjectKnowledge(claudeState.planContent);
+        const planWarnings = matchProjectKnowledge(planContent);
         if (planWarnings.length > 0) {
           const warnText = planWarnings.map((w) => w.warning.split(".")[0]).join(". ");
-          tmuxSendKeys(
-            params.tmuxTarget,
-            `Heads up on your plan: ${warnText}. Keep these in mind.`,
-          );
+          try {
+            await driver.sendFeedback(`Heads up on your plan: ${warnText}. Keep these in mind.`);
+          } catch {
+            /* Non-fatal */
+          }
         }
       }
 
-      // Continue waiting for implementation to complete
-      const implState = await pollForClaudeState(params.tmuxTarget, {
-        timeoutMs: claudeTimeoutMs,
-        graceMs: 5_000,
-      });
-      if (implState.timedOut) {
-        params.onProgress?.(`Claude didn't finish implementation within timeout. Stopping.`);
+      // Continue waiting for implementation
+      const implResult = await driver.waitForCompletion(claudeTimeoutMs);
+      if (implResult.timedOut) {
+        params.onProgress?.(`Agent didn't finish implementation within timeout. Stopping.`);
         return {
           ok: false,
           iterations: i,
@@ -631,16 +1013,62 @@ export async function runVoiceQaLoop(params: VoiceQaLoopParams): Promise<VoiceQa
           lastResults,
           lastMultiTurnResult,
           iterationHistory,
+          lastScorecard,
         };
       }
     }
 
-    // Grace period — let file writes settle
+    // Grace period — let file writes settle + verify dev server compiled
     await new Promise((resolve) => setTimeout(resolve, 5_000));
 
-    // === OBSERVE: capture what Claude actually did ===
-    params.onProgress?.(`Observing Claude's changes (iteration ${i})...`);
+    // === OBSERVE: capture what the agent actually did ===
+    params.onProgress?.(`Observing agent's changes (iteration ${i})...`);
+    const agentOutput = driver.captureOutput();
     const observation = observeIteration(params.targetCwd, params.tmuxTarget, diagnoses);
+    if (agentOutput && !observation.tmuxScrollback) {
+      observation.tmuxScrollback = agentOutput;
+    }
+
+    // === VERIFY: Run validation pipeline (compile + dev server + tests + score) ===
+    {
+      const prevScore =
+        iterationHistory.length > 0
+          ? (iterationHistory[iterationHistory.length - 1].scorecard?.overall ?? null)
+          : null;
+      const pipelineResult = await runValidationPipeline({
+        targetCwd: params.targetCwd,
+        appUrl: params.appUrl,
+        changedFiles: observation.changedFiles,
+        diff: observation.diffFull,
+        nudge,
+        projectWarnings,
+        currentScore: oneShotScorecard?.overall ?? null,
+        previousScore: prevScore,
+        onProgress: params.onProgress,
+      });
+
+      if (!pipelineResult.allPassed) {
+        params.onProgress?.(
+          `WARNING: Validation pipeline failed. Next QA run may test broken code.`,
+        );
+      }
+
+      // LLM code review (advisory, separate from blocking pipeline)
+      if (i >= 2 && observation.diffFull && params.agentDiagnose) {
+        try {
+          params.onProgress?.(`Running code review on agent's diff...`);
+          const reviewPrompt = buildCodeReviewPrompt(observation.diffFull, nudge, projectWarnings);
+          const codeReview = await params.agentDiagnose(reviewPrompt);
+          const reviewText = codeReview.trim().slice(0, 500);
+          params.onProgress?.(`Code review: ${reviewText}`);
+          if (reviewText) {
+            observation.tmuxScrollback += `\n[Code Review] ${reviewText}`;
+          }
+        } catch (err) {
+          params.onProgress?.(`Code review failed (non-fatal): ${String(err)}`);
+        }
+      }
+    }
 
     if (observation.changedFiles.length > 0) {
       params.onProgress?.(
@@ -658,7 +1086,41 @@ export async function runVoiceQaLoop(params: VoiceQaLoopParams): Promise<VoiceQa
       nudgeSent: nudge,
       observation,
       passed: false,
+      scorecard: oneShotScorecard ?? null,
     });
+
+    // RLM: Store full iteration data (no truncation) for rich context queries
+    try {
+      const adapted = qaIterationToRecord(
+        {
+          iteration: i,
+          passed: false,
+          nudgeSent: nudge,
+          diffFull: observation?.diffFull ?? "",
+          changedFiles: observation?.changedFiles ?? [],
+          diagnoses: diagnoses.map((d) => ({
+            id: d.id,
+            rootCause: d.rootCause,
+            severity: d.severity,
+            suggestedFix: d.suggestedFix,
+          })),
+          consoleLogs: enriched.flatMap((r) => r.consoleLogs),
+          consoleErrors: enriched.flatMap((r) => r.consoleErrors),
+          wsEvents: enriched.flatMap((r) =>
+            r.wsEvents.map((e) => ({
+              type: e.type,
+              closeCode: e.closeCode,
+              payload: e.payload,
+            })),
+          ),
+          scorecard: oneShotScorecard ? { overall: oneShotScorecard.overall } : null,
+        },
+        loopId,
+      );
+      contextStore.append(adapted.domain, adapted.scopeKey, adapted.payload, adapted.tags);
+    } catch {
+      // Non-fatal — context store is additive enrichment
+    }
   }
 
   // Max iterations exhausted
@@ -671,6 +1133,7 @@ export async function runVoiceQaLoop(params: VoiceQaLoopParams): Promise<VoiceQa
     lastResults,
     lastMultiTurnResult,
     iterationHistory,
+    lastScorecard,
   };
 }
 

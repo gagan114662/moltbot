@@ -20,6 +20,8 @@ import {
   type SessionEntry,
   updateSessionStore,
 } from "../../config/sessions.js";
+import { buildExtendedChatContext } from "../../context/build-chat-context.js";
+import { getGlobalContextStore } from "../../context/singleton.js";
 import { logVerbose } from "../../globals.js";
 import { clearCommandLane, getQueueSize } from "../../process/command-queue.js";
 import { normalizeMainKey } from "../../routing/session-key.js";
@@ -405,6 +407,18 @@ export async function runPreparedReply(
       ...(isReasoningTagProvider(provider) ? { enforceFinalTag: true } : {}),
     },
   };
+
+  // RLM context enrichment: prepend older messages from context store
+  // when the conversation exceeds the in-memory history window.
+  try {
+    const contextStore = getGlobalContextStore();
+    const extendedCtx = buildExtendedChatContext(contextStore, sessionKey, 0, baseBodyTrimmed);
+    if (extendedCtx) {
+      prefixedCommandBody = `${extendedCtx}\n\n${prefixedCommandBody}`;
+    }
+  } catch {
+    /* context store failures must never break the reply pipeline */
+  }
 
   return runReplyAgent({
     commandBody: prefixedCommandBody,

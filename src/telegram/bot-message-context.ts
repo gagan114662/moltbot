@@ -450,6 +450,7 @@ export const buildTelegramMessageContext = async ({
               messageId: typeof msg.message_id === "number" ? String(msg.message_id) : undefined,
             }
           : null,
+        meta: { channel: "telegram" },
       });
       return null;
     }

@@ -581,6 +581,7 @@ export function createSignalEventHandler(deps: SignalEventHandlerDeps) {
           messageId:
             typeof envelope.timestamp === "number" ? String(envelope.timestamp) : undefined,
         },
+        meta: { channel: "signal" },
       });
       return;
     }

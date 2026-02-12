@@ -6,6 +6,34 @@ export const DEFAULT_GROUP_HISTORY_LIMIT = 50;
 /** Maximum number of group history keys to retain (LRU eviction when exceeded). */
 export const MAX_HISTORY_KEYS = 1000;
 
+// ---------------------------------------------------------------------------
+// Context store hook (optional — for RLM context store dual-write)
+// ---------------------------------------------------------------------------
+
+/** Optional metadata passed alongside history entries for richer context store recording. */
+export type HistoryEntryMeta = {
+  channel?: string;
+  isBot?: boolean;
+};
+
+/**
+ * Hook invoked after every successful appendHistoryEntry call.
+ * Used by the context store bridge to persist chat messages beyond the
+ * in-memory sliding window.
+ */
+export type HistoryAppendHook = (
+  entry: HistoryEntry,
+  historyKey: string,
+  meta?: HistoryEntryMeta,
+) => void;
+
+let _appendHook: HistoryAppendHook | undefined;
+
+/** Register (or unregister with undefined) an append hook for context store integration. */
+export function setHistoryAppendHook(hook: HistoryAppendHook | undefined): void {
+  _appendHook = hook;
+}
+
 /**
  * Evict oldest keys from a history map when it exceeds MAX_HISTORY_KEYS.
  * Uses Map's insertion order for LRU-like behavior.
@@ -54,6 +82,7 @@ export function appendHistoryEntry<T extends HistoryEntry>(params: {
   historyKey: string;
   entry: T;
   limit: number;
+  meta?: HistoryEntryMeta;
 }): T[] {
   const { historyMap, historyKey, entry } = params;
   if (params.limit <= 0) {
@@ -71,6 +100,14 @@ export function appendHistoryEntry<T extends HistoryEntry>(params: {
   historyMap.set(historyKey, history);
   // Evict oldest keys if map exceeds max size to prevent unbounded memory growth
   evictOldHistoryKeys(historyMap);
+  // Fire context store hook (fire-and-forget)
+  if (_appendHook) {
+    try {
+      _appendHook(entry, historyKey, params.meta);
+    } catch {
+      /* context store failures must never break chat history */
+    }
+  }
   return history;
 }
 
@@ -79,6 +116,7 @@ export function recordPendingHistoryEntry<T extends HistoryEntry>(params: {
   historyKey: string;
   entry: T;
   limit: number;
+  meta?: HistoryEntryMeta;
 }): T[] {
   return appendHistoryEntry(params);
 }
@@ -88,6 +126,7 @@ export function recordPendingHistoryEntryIfEnabled<T extends HistoryEntry>(param
   historyKey: string;
   entry?: T | null;
   limit: number;
+  meta?: HistoryEntryMeta;
 }): T[] {
   if (!params.entry) {
     return [];
@@ -100,6 +139,7 @@ export function recordPendingHistoryEntryIfEnabled<T extends HistoryEntry>(param
     historyKey: params.historyKey,
     entry: params.entry,
     limit: params.limit,
+    meta: params.meta,
   });
 }
 
@@ -133,6 +173,7 @@ export function buildHistoryContextFromMap(params: {
   formatEntry: (entry: HistoryEntry) => string;
   lineBreak?: string;
   excludeLast?: boolean;
+  meta?: HistoryEntryMeta;
 }): string {
   if (params.limit <= 0) {
     return params.currentMessage;
@@ -143,6 +184,7 @@ export function buildHistoryContextFromMap(params: {
         historyKey: params.historyKey,
         entry: params.entry,
         limit: params.limit,
+        meta: params.meta,
       })
     : (params.historyMap.get(params.historyKey) ?? []);
   return buildHistoryContextFromEntries({

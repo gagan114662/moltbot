@@ -326,6 +326,7 @@ export async function prepareSlackMessage(params: {
             messageId: message.ts,
           }
         : null,
+      meta: { channel: "slack" },
     });
     return null;
   }

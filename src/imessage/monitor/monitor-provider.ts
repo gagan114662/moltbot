@@ -492,6 +492,7 @@ export async function monitorIMessageProvider(opts: MonitorIMessageOpts = {}): P
               messageId: message.id ? String(message.id) : undefined,
             }
           : null,
+        meta: { channel: "imessage" },
       });
       return;
     }

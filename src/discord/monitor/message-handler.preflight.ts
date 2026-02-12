@@ -481,6 +481,7 @@ export async function preflightDiscordMessage(
         historyKey: message.channelId,
         limit: params.historyLimit,
         entry: historyEntry ?? null,
+        meta: { channel: "discord" },
       });
       return null;
     }

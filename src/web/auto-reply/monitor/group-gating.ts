@@ -83,6 +83,7 @@ export function applyGroupGating(params: {
         id: params.msg.id,
         senderJid: params.msg.senderJid,
       },
+      meta: { channel: "whatsapp" },
     });
     return { shouldProcess: false };
   }
@@ -141,6 +142,7 @@ export function applyGroupGating(params: {
         id: params.msg.id,
         senderJid: params.msg.senderJid,
       },
+      meta: { channel: "whatsapp" },
     });
     return { shouldProcess: false };
   }
