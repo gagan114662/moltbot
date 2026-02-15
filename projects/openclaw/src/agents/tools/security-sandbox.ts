@@ -273,6 +273,8 @@ async function handleCreateEngagement(params: Record<string, unknown>) {
     execSync(
       `docker run -d --name ${containerName} ` +
         `--memory=2g --cpus=2 ` +
+        `--cap-add=NET_RAW --cap-add=NET_ADMIN ` +
+        `--user root ` +
         `--network=bridge ` +
         `-v "${engDir}:/engagement/results" ` +
         `-e "ENGAGEMENT_ID=${engId}" ` +

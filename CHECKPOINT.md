@@ -7,17 +7,11 @@ Phase 0: First Blood (IN PROGRESS) <-- CURRENT
 
 ## Last Session
 
-- **Date:** 2026-02-15
-- **What was done:** Built Phase 0 infrastructure — Kali Docker sandbox, revenue tracker tool, security sandbox orchestrator, bug bounty swarm skill, channel-bot-factory skill. Updated delegation framework with PayPal + bug bounty authorized domains/keywords.
-- **Files created:**
-  - `docker/Dockerfile.sandbox-kali` — Full Kali Linux sandbox with nmap, metasploit, sqlmap, nuclei, subfinder, httpx, amass, ffuf, etc.
-  - `docker/docker-compose.security.yml` — Orchestration for recon, web-scanner, exploit-verify containers
-  - `src/agents/tools/revenue-tracker.ts` — Revenue JSONL logging with agent attribution chain, P&L per agent
-  - `src/agents/tools/security-sandbox.ts` — Docker container lifecycle management for security engagements
-  - `skills/bug-bounty/SKILL.md` — Full bug bounty swarm workflow (scout → recon → scan → report)
-  - `skills/channel-bot-factory/SKILL.md` — Channel bot deployment factory workflow
+- **Date:** 2026-02-15 (session 2)
+- **What was done:** Docker Desktop installed, Kali sandbox image built (11.5GB), all security tools verified (nmap 7.98, nuclei 3.7.0, subfinder 2.12.0, httpx, sqlmap 1.10.2, ffuf 2.1.0). Ran successful nmap scan against scanme.nmap.org. Fixed container permissions (NET_RAW/NET_ADMIN caps + root user required for raw socket access). Fixed OpenClaw gateway crash (plist pointed to dev build instead of Homebrew install). WhatsApp back online.
 - **Files modified:**
-  - `src/agents/delegation-framework.ts` — Added PayPal, HackerOne, Bugcrowd to authorized domains/keywords
+  - `src/agents/tools/security-sandbox.ts` — Added `--cap-add=NET_RAW --cap-add=NET_ADMIN --user root` to docker run
+  - `docker/docker-compose.security.yml` — Added `cap_add` and `user: root` to all 3 services
 
 ## Next Actions (Phase 0)
 
@@ -25,8 +19,8 @@ Phase 0: First Blood (IN PROGRESS) <-- CURRENT
 2. [x] Build `revenue.jsonl` tracker + WhatsApp notification → `src/agents/tools/revenue-tracker.ts`
 3. [x] Build Kali Linux Docker sandbox image → `docker/Dockerfile.sandbox-kali`
 4. [x] Bug Bounty Swarm MVP skill → `skills/bug-bounty/SKILL.md`
-5. [ ] Build Docker image: `docker build -f docker/Dockerfile.sandbox-kali -t moltbot/sandbox-kali .`
-6. [ ] Test security sandbox against scanme.nmap.org (authorized test target)
+5. [x] Build Docker image: `moltbot/sandbox-kali` (11.5GB, all tools verified)
+6. [x] Test security sandbox against scanme.nmap.org — nmap, httpx confirmed working
 7. [ ] Run Program Scout: scan HackerOne for first target programs
 8. [ ] Run first recon + scan pipeline end-to-end
 9. [ ] Deploy first Discord bot to a community
@@ -55,6 +49,5 @@ Phase 0: First Blood (IN PROGRESS) <-- CURRENT
 
 ## Blockers
 
-- Docker image needs to be built before security sandbox can be used
 - No HackerOne/Bugcrowd account set up yet for submissions
 - No Discord/Telegram bot tokens created yet
