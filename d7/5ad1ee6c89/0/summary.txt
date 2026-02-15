@@ -1,0 +1,24 @@
+There are plenty of uncommitted changes (5000+ files). When I finish this response, the `stop` hook will fire, and Entire should detect these changes and create a checkpoint commit.
+
+Here's a summary of what was wrong and what I fixed:
+
+**Root cause:** Your repo has `core.hooksPath = git-hooks` in `.git/config`, meaning git looks for hooks in `git-hooks/` (not `.git/hooks/`). When you ran `entire enable`, it installed its git hooks (`commit-msg`, `post-commit`, `prepare-commit-msg`, `pre-push`) in `.git/hooks/` — the wrong location. So Entire's git hooks never fired.
+
+**What I fixed:**
+- Copied all 4 Entire git hooks into `git-hooks/` (where git actually looks)
+- Merged Entire's `pre-push` into the existing `git-hooks/pre-push`
+- Made them all executable
+- Re-ran `entire enable --force` to ensure Claude Code hooks are fresh
+
+**What should happen now:**
+1. When I finish this response, the Claude Code `stop` hook fires → `entire hooks claude-code stop`
+2. Entire detects file changes and creates an auto-commit with `[entire]` prefix
+3. On your next `git push`, the `pre-push` hook pushes the `entire/checkpoints/v1` branch to the remote
+4. Checkpoints should then appear on your Entire.io dashboard
+
+**To verify after this response ends:** Run `entire explain` — you should see checkpoint count > 0. Then check your dashboard.
+
+Sources:
+- [Entire CLI GitHub](https://github.com/entireio/cli)
+- [Entire docs - Strategies](https://docs.entire.io/cli/strategies)
+- [Entire docs - Quickstart](https://docs.entire.io/quickstart)
