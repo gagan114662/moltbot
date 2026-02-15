@@ -53,6 +53,15 @@ ${GOALS}
 "
 fi
 
+# Revenue pipeline checkpoint — cross-session continuity
+if [ -f "CHECKPOINT.md" ]; then
+  CHECKPOINT=$(head -40 CHECKPOINT.md)
+  CONTEXT="${CONTEXT}
+## Revenue Pipeline Checkpoint
+${CHECKPOINT}
+"
+fi
+
 # Test health snapshot (fast — just counts)
 if command -v pnpm &>/dev/null; then
   TEST_COUNT=$(find src extensions -name '*.test.ts' 2>/dev/null | wc -l | tr -d ' ')
