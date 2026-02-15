@@ -35,15 +35,6 @@ type EngagementConfig = {
   created_at: string;
 };
 
-type ScanResult = {
-  tool: string;
-  target: string;
-  findings: string[];
-  severity: "critical" | "high" | "medium" | "low" | "info";
-  raw_output: string;
-  timestamp: string;
-};
-
 function generateEngagementId(): string {
   const ts = Date.now().toString(36);
   const rand = Math.random().toString(36).slice(2, 6);
