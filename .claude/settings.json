@@ -1,95 +1,5 @@
 {
   "hooks": {
-    "SessionStart": [
-      {
-        "matcher": "startup",
-        "hooks": [
-          {
-            "type": "command",
-            "command": "\"$CLAUDE_PROJECT_DIR\"/.claude/hooks/load-context.sh"
-          }
-        ]
-      },
-      {
-        "matcher": "",
-        "hooks": [
-          {
-            "type": "command",
-            "command": "entire hooks claude-code session-start"
-          }
-        ]
-      }
-    ],
-    "SessionEnd": [
-      {
-        "matcher": "",
-        "hooks": [
-          {
-            "type": "command",
-            "command": "entire hooks claude-code session-end"
-          }
-        ]
-      }
-    ],
-    "UserPromptSubmit": [
-      {
-        "matcher": "",
-        "hooks": [
-          {
-            "type": "command",
-            "command": "\"$CLAUDE_PROJECT_DIR\"/.claude/hooks/enrich-prompt.sh"
-          },
-          {
-            "type": "command",
-            "command": "entire hooks claude-code user-prompt-submit"
-          }
-        ]
-      },
-      {
-        "matcher": "",
-        "hooks": [
-          {
-            "type": "command",
-            "command": ".claude/hooks/qa-feedback.sh"
-          }
-        ]
-      }
-    ],
-    "Stop": [
-      {
-        "matcher": "",
-        "hooks": [
-          {
-            "type": "command",
-            "command": "\"$CLAUDE_PROJECT_DIR\"/.claude/hooks/verify-before-stop.sh"
-          },
-          {
-            "type": "command",
-            "command": "entire hooks claude-code stop"
-          }
-        ]
-      }
-    ],
-    "PreToolUse": [
-      {
-        "matcher": "Bash",
-        "hooks": [
-          {
-            "type": "command",
-            "command": "\"$CLAUDE_PROJECT_DIR\"/.claude/hooks/guard-bash.sh"
-          }
-        ]
-      },
-      {
-        "matcher": "Task",
-        "hooks": [
-          {
-            "type": "command",
-            "command": "entire hooks claude-code pre-task"
-          }
-        ]
-      }
-    ],
     "PostToolUse": [
       {
         "matcher": "Write|Edit",
@@ -118,9 +28,261 @@
           }
         ]
       }
+    ],
+    "PreToolUse": [
+      {
+        "matcher": "Bash",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "\"$CLAUDE_PROJECT_DIR\"/.claude/hooks/guard-bash.sh"
+          }
+        ]
+      },
+      {
+        "matcher": "Task",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "entire hooks claude-code pre-task"
+          }
+        ]
+      }
+    ],
+    "SessionEnd": [
+      {
+        "matcher": "",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "entire hooks claude-code session-end"
+          }
+        ]
+      }
+    ],
+    "SessionStart": [
+      {
+        "matcher": "startup",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "\"$CLAUDE_PROJECT_DIR\"/.claude/hooks/load-context.sh"
+          }
+        ]
+      },
+      {
+        "matcher": "",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "entire hooks claude-code session-start"
+          }
+        ]
+      }
+    ],
+    "Stop": [
+      {
+        "matcher": "",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "\"$CLAUDE_PROJECT_DIR\"/.claude/hooks/verify-before-stop.sh"
+          },
+          {
+            "type": "command",
+            "command": "entire hooks claude-code stop"
+          }
+        ]
+      }
+    ],
+    "UserPromptSubmit": [
+      {
+        "matcher": "",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "\"$CLAUDE_PROJECT_DIR\"/.claude/hooks/enrich-prompt.sh"
+          },
+          {
+            "type": "command",
+            "command": "entire hooks claude-code user-prompt-submit"
+          }
+        ]
+      },
+      {
+        "matcher": "",
+        "hooks": [
+          {
+            "type": "command",
+            "command": ".claude/hooks/qa-feedback.sh"
+          }
+        ]
+      }
     ]
   },
   "permissions": {
+    "allow": [
+      "Bash(git *)",
+      "Bash(pnpm *)",
+      "Bash(npm *)",
+      "Bash(npx *)",
+      "Bash(node *)",
+      "Bash(tsx *)",
+      "Bash(docker *)",
+      "Bash(docker-compose *)",
+      "Bash(docker compose *)",
+      "Bash(fly *)",
+      "Bash(flyctl *)",
+      "Bash(nmap *)",
+      "Bash(curl *)",
+      "Bash(wget *)",
+      "Bash(python3 *)",
+      "Bash(pip3 *)",
+      "Bash(cargo *)",
+      "Bash(go *)",
+      "Bash(make *)",
+      "Bash(cmake *)",
+      "Bash(playwright *)",
+      "Bash(npx playwright *)",
+      "Bash(ssh *)",
+      "Bash(scp *)",
+      "Bash(rsync *)",
+      "Bash(aws *)",
+      "Bash(gcloud *)",
+      "Bash(gh *)",
+      "Bash(jq *)",
+      "Bash(yq *)",
+      "Bash(openssl *)",
+      "Bash(base64 *)",
+      "Bash(chmod *)",
+      "Bash(mkdir *)",
+      "Bash(cp *)",
+      "Bash(mv *)",
+      "Bash(ln *)",
+      "Bash(ls *)",
+      "Bash(cat *)",
+      "Bash(head *)",
+      "Bash(tail *)",
+      "Bash(wc *)",
+      "Bash(sort *)",
+      "Bash(uniq *)",
+      "Bash(grep *)",
+      "Bash(rg *)",
+      "Bash(find *)",
+      "Bash(xargs *)",
+      "Bash(sed *)",
+      "Bash(awk *)",
+      "Bash(cut *)",
+      "Bash(tr *)",
+      "Bash(tee *)",
+      "Bash(env *)",
+      "Bash(export *)",
+      "Bash(echo *)",
+      "Bash(printf *)",
+      "Bash(date *)",
+      "Bash(sleep *)",
+      "Bash(kill *)",
+      "Bash(pkill *)",
+      "Bash(ps *)",
+      "Bash(lsof *)",
+      "Bash(top *)",
+      "Bash(htop *)",
+      "Bash(df *)",
+      "Bash(du *)",
+      "Bash(free *)",
+      "Bash(uname *)",
+      "Bash(whoami *)",
+      "Bash(which *)",
+      "Bash(type *)",
+      "Bash(file *)",
+      "Bash(stat *)",
+      "Bash(md5 *)",
+      "Bash(shasum *)",
+      "Bash(tar *)",
+      "Bash(zip *)",
+      "Bash(unzip *)",
+      "Bash(gzip *)",
+      "Bash(gunzip *)",
+      "Bash(touch *)",
+      "Bash(rm *)",
+      "Bash(vitest *)",
+      "Bash(jest *)",
+      "Bash(tsc *)",
+      "Bash(oxlint *)",
+      "Bash(oxfmt *)",
+      "Bash(shellcheck *)",
+      "Bash(entire *)",
+      "Bash(stripe *)",
+      "Bash(bun *)",
+      "Bash(deno *)",
+      "Bash(dig *)",
+      "Bash(nslookup *)",
+      "Bash(ping *)",
+      "Bash(traceroute *)",
+      "Bash(netstat *)",
+      "Bash(ifconfig *)",
+      "Bash(launchctl *)",
+      "Bash(crontab *)",
+      "Bash(systemctl *)",
+      "Bash(defaults *)",
+      "Bash(osascript *)",
+      "Bash(open *)",
+      "Bash(pbcopy *)",
+      "Bash(pbpaste *)",
+      "Bash(sw_vers *)",
+      "Bash(diskutil *)",
+      "Bash(hdiutil *)",
+      "Bash(sqlite3 *)",
+      "Bash(psql *)",
+      "Bash(redis-cli *)",
+      "Bash(mongosh *)",
+      "Bash(tmux *)",
+      "Bash(screen *)",
+      "Bash(nohup *)",
+      "Bash(timeout *)",
+      "Bash(bash *)",
+      "Bash(sh *)",
+      "Bash(zsh *)",
+      "Bash(source *)",
+      "Bash(. *)",
+      "Bash(test *)",
+      "Bash([ *)",
+      "Bash(true *)",
+      "Bash(false *)",
+      "Bash(read *)",
+      "Bash(set *)",
+      "Bash(eval *)",
+      "Bash(cd *)",
+      "Bash(pushd *)",
+      "Bash(popd *)",
+      "Bash(pwd)",
+      "Bash(id *)",
+      "Bash(groups *)",
+      "Bash(hostname *)",
+      "Bash(uptime *)",
+      "Bash(w)",
+      "Bash(last *)",
+      "Bash(dscl *)",
+      "Bash(security *)",
+      "Bash(codesign *)",
+      "Bash(spctl *)",
+      "Bash(xattr *)",
+      "Bash(mdutil *)",
+      "Bash(mdfind *)",
+      "Bash(softwareupdate *)",
+      "Bash(brew *)",
+      "Bash(mas *)",
+      "Bash(gem *)",
+      "Bash(pod *)",
+      "Bash(swift *)",
+      "Bash(xcodebuild *)",
+      "Bash(xcrun *)",
+      "Bash(xcode-select *)",
+      "Bash(plutil *)",
+      "Bash(PlistBuddy *)",
+      "Bash(/usr/libexec/PlistBuddy *)",
+      "Bash(tccutil *)"
+    ],
     "deny": ["Read(./.entire/metadata/**)"]
   }
 }

@@ -3,9 +3,15 @@
 # Two-layer defense against premature "done":
 #   1. Taskmaster — checks for incomplete tasks, unresolved errors, pending requests
 #   2. Verification — runs typecheck + lint + changed-file tests
+# In autonomous mode (OPENCLAW_AUTONOMOUS_MODE=1), skip all checks — agents self-verify.
 set -uo pipefail
 
 INPUT=$(cat)
+
+# Autonomous mode bypass — daemon/cron agents manage their own quality gates
+if [ "${OPENCLAW_AUTONOMOUS_MODE:-0}" = "1" ]; then
+  exit 0
+fi
 
 # Prevent infinite loops: if a Stop hook already triggered continuation, allow stop.
 STOP_HOOK_ACTIVE=$(echo "$INPUT" | jq -r '.stop_hook_active // false')
@@ -14,7 +20,8 @@ if [ "$STOP_HOOK_ACTIVE" = "true" ]; then
 fi
 
 CWD=$(echo "$INPUT" | jq -r '.cwd // "."')
-cd "$CWD"
+# Prefer CLAUDE_PROJECT_DIR (set by Claude Code) over CWD from input
+cd "${CLAUDE_PROJECT_DIR:-$CWD}"
 
 # ---------------------------------------------------------------------------
 # Taskmaster: track continuation count to prevent infinite loops

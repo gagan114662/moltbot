@@ -96,7 +96,7 @@ jobs:
             esac
 
             case "$path" in
-              src/*|test/*|extensions/*|packages/*|scripts/*|ui/*|.github/*|openclaw.mjs|package.json|pnpm-lock.yaml|pnpm-workspace.yaml|tsconfig*.json|vitest*.ts|tsdown.config.ts|.oxlintrc.json|.oxfmtrc.jsonc)
+              src/*|test/*|extensions/*|packages/*|scripts/*|ui/*|.github/*|config/*|config/*/*|config/*/*/*|openclaw.mjs|package.json|pnpm-lock.yaml|pnpm-workspace.yaml|tsconfig.json)
                 run_node=true
                 ;;
             esac
@@ -186,7 +186,7 @@ jobs:
             command: pnpm protocol:check
           - runtime: bun
             task: test
-            command: pnpm canvas:a2ui:bundle && bunx vitest run --config vitest.unit.config.ts
+            command: pnpm canvas:a2ui:bundle && bunx vitest run --config config/test/vitest.unit.config.ts
     steps:
       - name: Checkout
         uses: actions/checkout@v4
@@ -436,8 +436,8 @@ jobs:
 
       - name: Swift lint
         run: |
-          swiftlint --config .swiftlint.yml
-          swiftformat --lint apps/macos/Sources --config .swiftformat
+          swiftlint --config config/lint/.swiftlint.yml
+          swiftformat --lint apps/macos/Sources --config config/lint/.swiftformat
 
       - name: Cache SwiftPM
         uses: actions/cache@v4

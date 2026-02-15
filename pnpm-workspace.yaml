@@ -1,6 +1,7 @@
 packages:
   - .
   - ui
+  - the-surface
   - packages/*
   - extensions/*
 
