@@ -7,11 +7,9 @@ Phase 0: First Blood (IN PROGRESS) <-- CURRENT
 
 ## Last Session
 
-- **Date:** 2026-02-15 (session 2)
-- **What was done:** Docker Desktop installed, Kali sandbox image built (11.5GB), all security tools verified (nmap 7.98, nuclei 3.7.0, subfinder 2.12.0, httpx, sqlmap 1.10.2, ffuf 2.1.0). Ran successful nmap scan against scanme.nmap.org. Fixed container permissions (NET_RAW/NET_ADMIN caps + root user required for raw socket access). Fixed OpenClaw gateway crash (plist pointed to dev build instead of Homebrew install). WhatsApp back online.
-- **Files modified:**
-  - `src/agents/tools/security-sandbox.ts` — Added `--cap-add=NET_RAW --cap-add=NET_ADMIN --user root` to docker run
-  - `docker/docker-compose.security.yml` — Added `cap_add` and `user: root` to all 3 services
+- **Date:** 2026-02-15 (session 3)
+- **What was done:** First recon pipeline completed against 8x8 (HackerOne program). Enumerated 8,916 subdomains across 16 domains, probed 141 live hosts, ran nuclei vulnerability scan. Found CVE-2025-59474 (medium) on ci.jitsi.org — Jenkins signup leaks internal node names. Also found weak TLS on dashboard.qa.ai.8x8.com, directory listing on backup-download.jitsi.org, and extensive staging/dev exposure. Full report at `~/.openclaw/workspace/evidence/engagements/8x8-recon/RECON-REPORT.md`.
+- **Findings:** 1 medium CVE, 1 low (weak TLS), 4 info-level findings
 
 ## Next Actions (Phase 0)
 
@@ -21,8 +19,8 @@ Phase 0: First Blood (IN PROGRESS) <-- CURRENT
 4. [x] Bug Bounty Swarm MVP skill → `skills/bug-bounty/SKILL.md`
 5. [x] Build Docker image: `moltbot/sandbox-kali` (11.5GB, all tools verified)
 6. [x] Test security sandbox against scanme.nmap.org — nmap, httpx confirmed working
-7. [ ] Run Program Scout: scan HackerOne for first target programs
-8. [ ] Run first recon + scan pipeline end-to-end
+7. [x] Run Program Scout: scanned 8x8 (18 domains), Automattic (6), Airbnb (16)
+8. [x] Run first recon + scan pipeline end-to-end — 8,916 subs → 141 live → nuclei → CVE-2025-59474 found
 9. [ ] Deploy first Discord bot to a community
 10. [ ] Deploy first Telegram bot with freemium model
 11. [ ] First revenue event logged to revenue.jsonl
@@ -38,6 +36,7 @@ Phase 0: First Blood (IN PROGRESS) <-- CURRENT
 - **Channel bot factory:** `skills/channel-bot-factory/SKILL.md`
 - **Kali Dockerfile:** `docker/Dockerfile.sandbox-kali`
 - **Security compose:** `docker/docker-compose.security.yml`
+- **8x8 recon report:** `~/.openclaw/workspace/evidence/engagements/8x8-recon/RECON-REPORT.md`
 - Delegation framework: `src/agents/delegation-framework.ts`
 - Browser delegate: `src/agents/tools/browser-delegate-tool.ts`
 - Orchestrate tool: `src/agents/tools/orchestrate-tool.ts`
