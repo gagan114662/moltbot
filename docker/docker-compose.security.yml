@@ -1,0 +1,75 @@
+# Moltbot Security Swarm — Docker Compose for Bug Bounty Operations
+#
+# Usage:
+#   docker compose -f docker/docker-compose.security.yml up -d
+#   docker compose -f docker/docker-compose.security.yml exec scanner bash
+#
+# Each engagement spawns a fresh container with scoped permissions.
+# The orchestrator (security-sandbox.ts) manages lifecycle programmatically.
+
+services:
+  # Recon scanner — subdomain enumeration, port scanning, tech fingerprinting
+  recon:
+    build:
+      context: ..
+      dockerfile: docker/Dockerfile.sandbox-kali
+    container_name: moltbot-recon
+    volumes:
+      - recon-results:/engagement/results
+    environment:
+      - ENGAGEMENT_TYPE=recon
+      - MAX_SCAN_DURATION=3600
+    networks:
+      - security-net
+    deploy:
+      resources:
+        limits:
+          cpus: "2.0"
+          memory: 2G
+
+  # Web vulnerability scanner — sqlmap, nuclei, nikto
+  web-scanner:
+    build:
+      context: ..
+      dockerfile: docker/Dockerfile.sandbox-kali
+    container_name: moltbot-web-scanner
+    volumes:
+      - scanner-results:/engagement/results
+    environment:
+      - ENGAGEMENT_TYPE=web-scan
+      - MAX_SCAN_DURATION=7200
+    networks:
+      - security-net
+    deploy:
+      resources:
+        limits:
+          cpus: "4.0"
+          memory: 4G
+
+  # Exploit verification — targeted testing of confirmed vulns
+  exploit-verify:
+    build:
+      context: ..
+      dockerfile: docker/Dockerfile.sandbox-kali
+    container_name: moltbot-exploit-verify
+    volumes:
+      - exploit-results:/engagement/results
+    environment:
+      - ENGAGEMENT_TYPE=exploit-verify
+      - MAX_SCAN_DURATION=1800
+    networks:
+      - security-net
+    deploy:
+      resources:
+        limits:
+          cpus: "1.0"
+          memory: 1G
+
+volumes:
+  recon-results:
+  scanner-results:
+  exploit-results:
+
+networks:
+  security-net:
+    driver: bridge

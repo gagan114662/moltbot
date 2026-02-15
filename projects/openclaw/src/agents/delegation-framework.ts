@@ -95,6 +95,18 @@ const AUTHORIZED_PAYMENT_DOMAINS = [
   "connect.stripe.com",
   "hooks.stripe.com",
   "billing.stripe.com",
+  // PayPal — primary payment method
+  "paypal.com",
+  "www.paypal.com",
+  "api.paypal.com",
+  "api-m.paypal.com",
+  "ipnpb.paypal.com",
+  // HackerOne — bug bounty payouts
+  "hackerone.com",
+  "api.hackerone.com",
+  // Bugcrowd — bug bounty payouts
+  "bugcrowd.com",
+  "api.bugcrowd.com",
 ];
 
 const AUTHORIZED_PAYMENT_KEYWORDS = [
@@ -109,6 +121,23 @@ const AUTHORIZED_PAYMENT_KEYWORDS = [
   "bot subscription",
   "telegram payment",
   "discord premium",
+  // PayPal keywords
+  "paypal webhook",
+  "paypal ipn",
+  "paypal payment",
+  "paypal payout",
+  // Bug bounty keywords
+  "bug bounty",
+  "bounty payout",
+  "hackerone",
+  "bugcrowd",
+  "vulnerability report",
+  "security scan",
+  "security sandbox",
+  // Channel bot revenue
+  "channel bot",
+  "bot factory",
+  "bot deployment",
 ];
 
 export function isAuthorizedPaymentAction(task: string, seedUrls?: string[]): boolean {

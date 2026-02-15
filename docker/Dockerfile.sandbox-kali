@@ -1,0 +1,77 @@
+# Moltbot Security Sandbox — Kali Linux with full pentesting toolkit
+# Used by the Bug Bounty Swarm for isolated security scanning engagements.
+# Each engagement gets its own container with scoped permissions.
+#
+# Usage:
+#   docker build -f docker/Dockerfile.sandbox-kali -t moltbot/sandbox-kali .
+#   docker run --rm -it moltbot/sandbox-kali nmap --version
+
+FROM kalilinux/kali-rolling
+
+ENV DEBIAN_FRONTEND=noninteractive
+
+# Core security tools (matches master plan toolkit)
+RUN apt-get update && apt-get install -y --no-install-recommends \
+    # Network scanning & enumeration
+    nmap \
+    hping3 \
+    dnsutils \
+    whois \
+    netcat-openbsd \
+    # Web application scanning
+    sqlmap \
+    skipfish \
+    nikto \
+    dirb \
+    # Password cracking
+    hashcat \
+    john \
+    # Wireless (for future use)
+    aircrack-ng \
+    # Metasploit framework
+    metasploit-framework \
+    # General utilities
+    bash \
+    ca-certificates \
+    curl \
+    wget \
+    git \
+    jq \
+    python3 \
+    python3-pip \
+    python3-venv \
+    ripgrep \
+    unzip \
+    && rm -rf /var/lib/apt/lists/*
+
+# Modern recon tools (Go-based, installed via go install)
+RUN apt-get update && apt-get install -y --no-install-recommends golang-go \
+    && rm -rf /var/lib/apt/lists/*
+
+ENV GOPATH=/opt/go
+ENV PATH="${GOPATH}/bin:${PATH}"
+
+RUN go install -v github.com/projectdiscovery/nuclei/v3/cmd/nuclei@latest \
+    && go install -v github.com/projectdiscovery/subfinder/v2/cmd/subfinder@latest \
+    && go install -v github.com/projectdiscovery/httpx/cmd/httpx@latest \
+    && go install -v github.com/owasp-amass/amass/v4/...@master \
+    && go install -v github.com/tomnomnom/waybackurls@latest \
+    && go install -v github.com/ffuf/ffuf/v2@latest \
+    && rm -rf /root/go/pkg /root/.cache/go-build
+
+# Update nuclei templates
+RUN nuclei -update-templates 2>/dev/null || true
+
+# Create non-root sandbox user for isolation
+RUN useradd --create-home --shell /bin/bash sandbox \
+    && chown -R sandbox:sandbox /opt/go
+
+# Engagement workspace — results go here
+RUN mkdir -p /engagement/results /engagement/scope /engagement/logs \
+    && chown -R sandbox:sandbox /engagement
+
+USER sandbox
+WORKDIR /engagement
+
+# Default: keep container alive for agent interaction
+CMD ["sleep", "infinity"]
