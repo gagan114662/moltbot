@@ -2,3 +2,8 @@
 ROOT=$(git rev-parse --show-toplevel 2>/dev/null)
 [ -z "$ROOT" ] && exit 0
 "$ROOT/scripts/pre-push-verify.sh"
+
+# Entire CLI hooks
+# Pre-push hook: push session logs alongside user's push
+# $1 is the remote name (e.g., "origin")
+entire hooks git pre-push "$1" || true
