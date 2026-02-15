@@ -1,0 +1,4 @@
+module SwiftLibraryPluginProvider {
+    header "/Users/gaganarora/Desktop/my projects/moltbot/Swabble/.build/arm64-apple-macosx/debug/SwiftLibraryPluginProvider.build/SwiftLibraryPluginProvider-Swift.h"
+    requires objc
+}

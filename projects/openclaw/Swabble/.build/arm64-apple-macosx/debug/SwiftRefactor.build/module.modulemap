@@ -1,0 +1,4 @@
+module SwiftRefactor {
+    header "/Users/gaganarora/Desktop/my projects/moltbot/Swabble/.build/arm64-apple-macosx/debug/SwiftRefactor.build/SwiftRefactor-Swift.h"
+    requires objc
+}

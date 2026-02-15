@@ -1,0 +1,4 @@
+module SwiftSyntax510 {
+    header "/Users/gaganarora/Desktop/my projects/moltbot/Swabble/.build/arm64-apple-macosx/debug/SwiftSyntax510.build/SwiftSyntax510-Swift.h"
+    requires objc
+}

@@ -1,0 +1,4 @@
+module Commander {
+    header "/Users/gaganarora/Desktop/my projects/moltbot/Swabble/.build/arm64-apple-macosx/debug/Commander.build/Commander-Swift.h"
+    requires objc
+}

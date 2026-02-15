@@ -1,0 +1,4 @@
+module SwiftSyntaxMacroExpansion {
+    header "/Users/gaganarora/Desktop/my projects/moltbot/Swabble/.build/arm64-apple-macosx/debug/SwiftSyntaxMacroExpansion-tool.build/SwiftSyntaxMacroExpansion-Swift.h"
+    requires objc
+}

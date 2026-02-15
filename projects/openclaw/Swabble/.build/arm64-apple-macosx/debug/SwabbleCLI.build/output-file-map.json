@@ -1,0 +1,83 @@
+{
+  "": {
+    "swift-dependencies": "/Users/gaganarora/Desktop/my projects/moltbot/Swabble/.build/arm64-apple-macosx/debug/SwabbleCLI.build/master.swiftdeps"
+  },
+  "/Users/gaganarora/Desktop/my projects/moltbot/Swabble/Sources/swabble/CLI/CLIRegistry.swift": {
+    "dependencies": "/Users/gaganarora/Desktop/my projects/moltbot/Swabble/.build/arm64-apple-macosx/debug/SwabbleCLI.build/CLIRegistry.d",
+    "object": "/Users/gaganarora/Desktop/my projects/moltbot/Swabble/.build/arm64-apple-macosx/debug/SwabbleCLI.build/CLIRegistry.swift.o",
+    "swiftmodule": "/Users/gaganarora/Desktop/my projects/moltbot/Swabble/.build/arm64-apple-macosx/debug/SwabbleCLI.build/CLIRegistry~partial.swiftmodule",
+    "swift-dependencies": "/Users/gaganarora/Desktop/my projects/moltbot/Swabble/.build/arm64-apple-macosx/debug/SwabbleCLI.build/CLIRegistry.swiftdeps"
+  },
+  "/Users/gaganarora/Desktop/my projects/moltbot/Swabble/Sources/swabble/Commands/DoctorCommand.swift": {
+    "dependencies": "/Users/gaganarora/Desktop/my projects/moltbot/Swabble/.build/arm64-apple-macosx/debug/SwabbleCLI.build/DoctorCommand.d",
+    "object": "/Users/gaganarora/Desktop/my projects/moltbot/Swabble/.build/arm64-apple-macosx/debug/SwabbleCLI.build/DoctorCommand.swift.o",
+    "swiftmodule": "/Users/gaganarora/Desktop/my projects/moltbot/Swabble/.build/arm64-apple-macosx/debug/SwabbleCLI.build/DoctorCommand~partial.swiftmodule",
+    "swift-dependencies": "/Users/gaganarora/Desktop/my projects/moltbot/Swabble/.build/arm64-apple-macosx/debug/SwabbleCLI.build/DoctorCommand.swiftdeps"
+  },
+  "/Users/gaganarora/Desktop/my projects/moltbot/Swabble/Sources/swabble/Commands/HealthCommand.swift": {
+    "dependencies": "/Users/gaganarora/Desktop/my projects/moltbot/Swabble/.build/arm64-apple-macosx/debug/SwabbleCLI.build/HealthCommand.d",
+    "object": "/Users/gaganarora/Desktop/my projects/moltbot/Swabble/.build/arm64-apple-macosx/debug/SwabbleCLI.build/HealthCommand.swift.o",
+    "swiftmodule": "/Users/gaganarora/Desktop/my projects/moltbot/Swabble/.build/arm64-apple-macosx/debug/SwabbleCLI.build/HealthCommand~partial.swiftmodule",
+    "swift-dependencies": "/Users/gaganarora/Desktop/my projects/moltbot/Swabble/.build/arm64-apple-macosx/debug/SwabbleCLI.build/HealthCommand.swiftdeps"
+  },
+  "/Users/gaganarora/Desktop/my projects/moltbot/Swabble/Sources/swabble/Commands/MicCommands.swift": {
+    "dependencies": "/Users/gaganarora/Desktop/my projects/moltbot/Swabble/.build/arm64-apple-macosx/debug/SwabbleCLI.build/MicCommands.d",
+    "object": "/Users/gaganarora/Desktop/my projects/moltbot/Swabble/.build/arm64-apple-macosx/debug/SwabbleCLI.build/MicCommands.swift.o",
+    "swiftmodule": "/Users/gaganarora/Desktop/my projects/moltbot/Swabble/.build/arm64-apple-macosx/debug/SwabbleCLI.build/MicCommands~partial.swiftmodule",
+    "swift-dependencies": "/Users/gaganarora/Desktop/my projects/moltbot/Swabble/.build/arm64-apple-macosx/debug/SwabbleCLI.build/MicCommands.swiftdeps"
+  },
+  "/Users/gaganarora/Desktop/my projects/moltbot/Swabble/Sources/swabble/Commands/ServeCommand.swift": {
+    "dependencies": "/Users/gaganarora/Desktop/my projects/moltbot/Swabble/.build/arm64-apple-macosx/debug/SwabbleCLI.build/ServeCommand.d",
+    "object": "/Users/gaganarora/Desktop/my projects/moltbot/Swabble/.build/arm64-apple-macosx/debug/SwabbleCLI.build/ServeCommand.swift.o",
+    "swiftmodule": "/Users/gaganarora/Desktop/my projects/moltbot/Swabble/.build/arm64-apple-macosx/debug/SwabbleCLI.build/ServeCommand~partial.swiftmodule",
+    "swift-dependencies": "/Users/gaganarora/Desktop/my projects/moltbot/Swabble/.build/arm64-apple-macosx/debug/SwabbleCLI.build/ServeCommand.swiftdeps"
+  },
+  "/Users/gaganarora/Desktop/my projects/moltbot/Swabble/Sources/swabble/Commands/ServiceCommands.swift": {
+    "dependencies": "/Users/gaganarora/Desktop/my projects/moltbot/Swabble/.build/arm64-apple-macosx/debug/SwabbleCLI.build/ServiceCommands.d",
+    "object": "/Users/gaganarora/Desktop/my projects/moltbot/Swabble/.build/arm64-apple-macosx/debug/SwabbleCLI.build/ServiceCommands.swift.o",
+    "swiftmodule": "/Users/gaganarora/Desktop/my projects/moltbot/Swabble/.build/arm64-apple-macosx/debug/SwabbleCLI.build/ServiceCommands~partial.swiftmodule",
+    "swift-dependencies": "/Users/gaganarora/Desktop/my projects/moltbot/Swabble/.build/arm64-apple-macosx/debug/SwabbleCLI.build/ServiceCommands.swiftdeps"
+  },
+  "/Users/gaganarora/Desktop/my projects/moltbot/Swabble/Sources/swabble/Commands/SetupCommand.swift": {
+    "dependencies": "/Users/gaganarora/Desktop/my projects/moltbot/Swabble/.build/arm64-apple-macosx/debug/SwabbleCLI.build/SetupCommand.d",
+    "object": "/Users/gaganarora/Desktop/my projects/moltbot/Swabble/.build/arm64-apple-macosx/debug/SwabbleCLI.build/SetupCommand.swift.o",
+    "swiftmodule": "/Users/gaganarora/Desktop/my projects/moltbot/Swabble/.build/arm64-apple-macosx/debug/SwabbleCLI.build/SetupCommand~partial.swiftmodule",
+    "swift-dependencies": "/Users/gaganarora/Desktop/my projects/moltbot/Swabble/.build/arm64-apple-macosx/debug/SwabbleCLI.build/SetupCommand.swiftdeps"
+  },
+  "/Users/gaganarora/Desktop/my projects/moltbot/Swabble/Sources/swabble/Commands/StartStopCommands.swift": {
+    "dependencies": "/Users/gaganarora/Desktop/my projects/moltbot/Swabble/.build/arm64-apple-macosx/debug/SwabbleCLI.build/StartStopCommands.d",
+    "object": "/Users/gaganarora/Desktop/my projects/moltbot/Swabble/.build/arm64-apple-macosx/debug/SwabbleCLI.build/StartStopCommands.swift.o",
+    "swiftmodule": "/Users/gaganarora/Desktop/my projects/moltbot/Swabble/.build/arm64-apple-macosx/debug/SwabbleCLI.build/StartStopCommands~partial.swiftmodule",
+    "swift-dependencies": "/Users/gaganarora/Desktop/my projects/moltbot/Swabble/.build/arm64-apple-macosx/debug/SwabbleCLI.build/StartStopCommands.swiftdeps"
+  },
+  "/Users/gaganarora/Desktop/my projects/moltbot/Swabble/Sources/swabble/Commands/StatusCommand.swift": {
+    "dependencies": "/Users/gaganarora/Desktop/my projects/moltbot/Swabble/.build/arm64-apple-macosx/debug/SwabbleCLI.build/StatusCommand.d",
+    "object": "/Users/gaganarora/Desktop/my projects/moltbot/Swabble/.build/arm64-apple-macosx/debug/SwabbleCLI.build/StatusCommand.swift.o",
+    "swiftmodule": "/Users/gaganarora/Desktop/my projects/moltbot/Swabble/.build/arm64-apple-macosx/debug/SwabbleCLI.build/StatusCommand~partial.swiftmodule",
+    "swift-dependencies": "/Users/gaganarora/Desktop/my projects/moltbot/Swabble/.build/arm64-apple-macosx/debug/SwabbleCLI.build/StatusCommand.swiftdeps"
+  },
+  "/Users/gaganarora/Desktop/my projects/moltbot/Swabble/Sources/swabble/Commands/TailLogCommand.swift": {
+    "dependencies": "/Users/gaganarora/Desktop/my projects/moltbot/Swabble/.build/arm64-apple-macosx/debug/SwabbleCLI.build/TailLogCommand.d",
+    "object": "/Users/gaganarora/Desktop/my projects/moltbot/Swabble/.build/arm64-apple-macosx/debug/SwabbleCLI.build/TailLogCommand.swift.o",
+    "swiftmodule": "/Users/gaganarora/Desktop/my projects/moltbot/Swabble/.build/arm64-apple-macosx/debug/SwabbleCLI.build/TailLogCommand~partial.swiftmodule",
+    "swift-dependencies": "/Users/gaganarora/Desktop/my projects/moltbot/Swabble/.build/arm64-apple-macosx/debug/SwabbleCLI.build/TailLogCommand.swiftdeps"
+  },
+  "/Users/gaganarora/Desktop/my projects/moltbot/Swabble/Sources/swabble/Commands/TestHookCommand.swift": {
+    "dependencies": "/Users/gaganarora/Desktop/my projects/moltbot/Swabble/.build/arm64-apple-macosx/debug/SwabbleCLI.build/TestHookCommand.d",
+    "object": "/Users/gaganarora/Desktop/my projects/moltbot/Swabble/.build/arm64-apple-macosx/debug/SwabbleCLI.build/TestHookCommand.swift.o",
+    "swiftmodule": "/Users/gaganarora/Desktop/my projects/moltbot/Swabble/.build/arm64-apple-macosx/debug/SwabbleCLI.build/TestHookCommand~partial.swiftmodule",
+    "swift-dependencies": "/Users/gaganarora/Desktop/my projects/moltbot/Swabble/.build/arm64-apple-macosx/debug/SwabbleCLI.build/TestHookCommand.swiftdeps"
+  },
+  "/Users/gaganarora/Desktop/my projects/moltbot/Swabble/Sources/swabble/Commands/TranscribeCommand.swift": {
+    "dependencies": "/Users/gaganarora/Desktop/my projects/moltbot/Swabble/.build/arm64-apple-macosx/debug/SwabbleCLI.build/TranscribeCommand.d",
+    "object": "/Users/gaganarora/Desktop/my projects/moltbot/Swabble/.build/arm64-apple-macosx/debug/SwabbleCLI.build/TranscribeCommand.swift.o",
+    "swiftmodule": "/Users/gaganarora/Desktop/my projects/moltbot/Swabble/.build/arm64-apple-macosx/debug/SwabbleCLI.build/TranscribeCommand~partial.swiftmodule",
+    "swift-dependencies": "/Users/gaganarora/Desktop/my projects/moltbot/Swabble/.build/arm64-apple-macosx/debug/SwabbleCLI.build/TranscribeCommand.swiftdeps"
+  },
+  "/Users/gaganarora/Desktop/my projects/moltbot/Swabble/Sources/swabble/main.swift": {
+    "dependencies": "/Users/gaganarora/Desktop/my projects/moltbot/Swabble/.build/arm64-apple-macosx/debug/SwabbleCLI.build/main.d",
+    "object": "/Users/gaganarora/Desktop/my projects/moltbot/Swabble/.build/arm64-apple-macosx/debug/SwabbleCLI.build/main.swift.o",
+    "swiftmodule": "/Users/gaganarora/Desktop/my projects/moltbot/Swabble/.build/arm64-apple-macosx/debug/SwabbleCLI.build/main~partial.swiftmodule",
+    "swift-dependencies": "/Users/gaganarora/Desktop/my projects/moltbot/Swabble/.build/arm64-apple-macosx/debug/SwabbleCLI.build/main.swiftdeps"
+  }
+}

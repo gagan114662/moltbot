@@ -1,0 +1,67 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+    <key>Label</key>
+    <string>com.moltbot.daemon</string>
+
+    <key>ProgramArguments</key>
+    <array>
+        <string>/bin/bash</string>
+        <string>-c</string>
+        <string>source ~/.openclaw/workspace/config/daemon-env.sh &amp;&amp; cd ~/Desktop/my\ projects/moltbot &amp;&amp; node projects/openclaw/dist/index.js gateway --bind lan --port 18789</string>
+    </array>
+
+    <key>EnvironmentVariables</key>
+    <dict>
+        <key>OPENCLAW_AUTONOMOUS_MODE</key>
+        <string>1</string>
+        <key>OPENCLAW_ALLOW_NESTED_SPAWN</key>
+        <string>1</string>
+        <key>PLAYWRIGHT_HEADLESS</key>
+        <string>1</string>
+        <key>BROWSER</key>
+        <string>echo</string>
+        <key>NODE_OPTIONS</key>
+        <string>--max-old-space-size=8192</string>
+        <key>PATH</key>
+        <string>/usr/local/bin:/opt/homebrew/bin:/usr/bin:/bin:/usr/sbin:/sbin</string>
+    </dict>
+
+    <key>RunAtLoad</key>
+    <true/>
+
+    <key>KeepAlive</key>
+    <dict>
+        <key>SuccessfulExit</key>
+        <false/>
+    </dict>
+
+    <key>StandardOutPath</key>
+    <string>/Users/gaganarora/.openclaw/logs/daemon-stdout.log</string>
+
+    <key>StandardErrorPath</key>
+    <string>/Users/gaganarora/.openclaw/logs/daemon-stderr.log</string>
+
+    <key>WorkingDirectory</key>
+    <string>/Users/gaganarora/Desktop/my projects/moltbot</string>
+
+    <key>ProcessType</key>
+    <string>Background</string>
+
+    <key>ThrottleInterval</key>
+    <integer>10</integer>
+
+    <key>SoftResourceLimits</key>
+    <dict>
+        <key>NumberOfFiles</key>
+        <integer>65536</integer>
+    </dict>
+
+    <key>HardResourceLimits</key>
+    <dict>
+        <key>NumberOfFiles</key>
+        <integer>65536</integer>
+    </dict>
+</dict>
+</plist>

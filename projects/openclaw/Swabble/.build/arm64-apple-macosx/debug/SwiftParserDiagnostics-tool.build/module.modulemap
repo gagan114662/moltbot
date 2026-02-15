@@ -1,0 +1,4 @@
+module SwiftParserDiagnostics {
+    header "/Users/gaganarora/Desktop/my projects/moltbot/Swabble/.build/arm64-apple-macosx/debug/SwiftParserDiagnostics-tool.build/SwiftParserDiagnostics-Swift.h"
+    requires objc
+}

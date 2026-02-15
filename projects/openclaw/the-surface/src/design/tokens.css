@@ -1,0 +1,31 @@
+/* The Surface — Design Tokens
+   Three colors. Four sizes. That's it. */
+
+:root {
+  /* Color — warm, not clinical */
+  --surface: #fafaf9;
+  --ink: #1c1917;
+  --ink-soft: #78716c;
+  --accent: #2563eb;
+  --accent-glow: rgba(37, 99, 235, 0.12);
+  --accent-pulse: rgba(37, 99, 235, 0.4);
+
+  /* Typography — only 4 sizes */
+  --text-sm: 1rem; /* 16px */
+  --text-md: 1.25rem; /* 20px */
+  --text-lg: 1.5rem; /* 24px */
+  --text-xl: 2rem; /* 32px */
+
+  /* Spacing — base unit 8px */
+  --space-1: 0.5rem; /* 8px */
+  --space-2: 1rem; /* 16px */
+  --space-3: 1.5rem; /* 24px */
+  --space-4: 2rem; /* 32px */
+  --space-6: 3rem; /* 48px */
+
+  /* Motion */
+  --ease-out: cubic-bezier(0.16, 1, 0.3, 1);
+  --duration-fast: 200ms;
+  --duration-normal: 300ms;
+  --duration-slow: 600ms;
+}

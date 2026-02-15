@@ -1,0 +1,11 @@
+{
+  "": {
+    "swift-dependencies": "/Users/gaganarora/Desktop/my projects/moltbot/Swabble/.build/arm64-apple-macosx/debug/SwabbleKitTests.build/master.swiftdeps"
+  },
+  "/Users/gaganarora/Desktop/my projects/moltbot/Swabble/Tests/SwabbleKitTests/WakeWordGateTests.swift": {
+    "dependencies": "/Users/gaganarora/Desktop/my projects/moltbot/Swabble/.build/arm64-apple-macosx/debug/SwabbleKitTests.build/WakeWordGateTests.d",
+    "object": "/Users/gaganarora/Desktop/my projects/moltbot/Swabble/.build/arm64-apple-macosx/debug/SwabbleKitTests.build/WakeWordGateTests.swift.o",
+    "swiftmodule": "/Users/gaganarora/Desktop/my projects/moltbot/Swabble/.build/arm64-apple-macosx/debug/SwabbleKitTests.build/WakeWordGateTests~partial.swiftmodule",
+    "swift-dependencies": "/Users/gaganarora/Desktop/my projects/moltbot/Swabble/.build/arm64-apple-macosx/debug/SwabbleKitTests.build/WakeWordGateTests.swiftdeps"
+  }
+}

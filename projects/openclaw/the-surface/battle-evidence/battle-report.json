@@ -1,0 +1,1639 @@
+{
+  "timestamp": "2026-02-13T03:17:17.190Z",
+  "verdict": "PASS",
+  "passed": 15,
+  "failed": 0,
+  "total": 15,
+  "results": [
+    {
+      "name": "Page loads correctly",
+      "passed": true,
+      "duration": 1293
+    },
+    {
+      "name": "Idle greeting visible",
+      "passed": true,
+      "duration": 2578
+    },
+    {
+      "name": "Canvas is present",
+      "passed": true,
+      "duration": 4
+    },
+    {
+      "name": "Mic button present",
+      "passed": true,
+      "duration": 3
+    },
+    {
+      "name": "Text input present",
+      "passed": true,
+      "duration": 1
+    },
+    {
+      "name": "Text input connects to Gemini",
+      "passed": true,
+      "duration": 772
+    },
+    {
+      "name": "Connection indicator works",
+      "passed": true,
+      "duration": 40
+    },
+    {
+      "name": "Gemini responds",
+      "passed": true,
+      "duration": 5307
+    },
+    {
+      "name": "Tool calls executed",
+      "passed": true,
+      "duration": 3045
+    },
+    {
+      "name": "Canvas has shapes",
+      "passed": true,
+      "duration": 3521
+    },
+    {
+      "name": "Second interaction works",
+      "passed": true,
+      "duration": 5515
+    },
+    {
+      "name": "Clear canvas works",
+      "passed": true,
+      "duration": 3265
+    },
+    {
+      "name": "Portal creation works",
+      "passed": true,
+      "duration": 6299
+    },
+    {
+      "name": "Conversation flowed with Gemini",
+      "passed": true,
+      "duration": 0
+    },
+    {
+      "name": "No fatal errors",
+      "passed": true,
+      "duration": 0
+    }
+  ],
+  "wsEvents": [
+    {
+      "timestamp": 1770952596575,
+      "type": "open",
+      "url": "wss://generativelanguage.googleapis.com/ws/google.ai.generativelanguage.v1beta.GenerativeService.BidiGenerateContent?key=AIzaSyCLwr34khyQuxz62ARq791njkkps3Zg-tQ"
+    },
+    {
+      "timestamp": 1770952596620,
+      "type": "sent",
+      "payload": "[setup]"
+    },
+    {
+      "timestamp": 1770952596720,
+      "type": "received",
+      "payload": "[raw: ]"
+    },
+    {
+      "timestamp": 1770952596741,
+      "type": "sent",
+      "payload": "[text: {\"turns\":[{\"role\":\"user\",\"parts\":[{\"text\":\"Draw a blue rectangle and label it 'H]"
+    },
+    {
+      "timestamp": 1770952598652,
+      "type": "received",
+      "payload": "[raw: ]"
+    },
+    {
+      "timestamp": 1770952599880,
+      "type": "received",
+      "payload": "[raw: ]"
+    },
+    {
+      "timestamp": 1770952599891,
+      "type": "sent",
+      "payload": "[tool-response]"
+    },
+    {
+      "timestamp": 1770952600847,
+      "type": "received",
+      "payload": "[raw: ]"
+    },
+    {
+      "timestamp": 1770952600853,
+      "type": "received",
+      "payload": "[raw: ]"
+    },
+    {
+      "timestamp": 1770952600862,
+      "type": "sent",
+      "payload": "[tool-response]"
+    },
+    {
+      "timestamp": 1770952601930,
+      "type": "received",
+      "payload": "[raw: ]"
+    },
+    {
+      "timestamp": 1770952601930,
+      "type": "received",
+      "payload": "[raw: ]"
+    },
+    {
+      "timestamp": 1770952601936,
+      "type": "received",
+      "payload": "[raw: ]"
+    },
+    {
+      "timestamp": 1770952601937,
+      "type": "received",
+      "payload": "[raw: ]"
+    },
+    {
+      "timestamp": 1770952601937,
+      "type": "received",
+      "payload": "[raw: ]"
+    },
+    {
+      "timestamp": 1770952601937,
+      "type": "received",
+      "payload": "[raw: ]"
+    },
+    {
+      "timestamp": 1770952601947,
+      "type": "received",
+      "payload": "[raw: ]"
+    },
+    {
+      "timestamp": 1770952601947,
+      "type": "received",
+      "payload": "[raw: ]"
+    },
+    {
+      "timestamp": 1770952601956,
+      "type": "received",
+      "payload": "[raw: ]"
+    },
+    {
+      "timestamp": 1770952601966,
+      "type": "received",
+      "payload": "[raw: ]"
+    },
+    {
+      "timestamp": 1770952601977,
+      "type": "received",
+      "payload": "[raw: ]"
+    },
+    {
+      "timestamp": 1770952601992,
+      "type": "received",
+      "payload": "[raw: ]"
+    },
+    {
+      "timestamp": 1770952602010,
+      "type": "received",
+      "payload": "[raw: ]"
+    },
+    {
+      "timestamp": 1770952602035,
+      "type": "received",
+      "payload": "[raw: ]"
+    },
+    {
+      "timestamp": 1770952602036,
+      "type": "received",
+      "payload": "[raw: ]"
+    },
+    {
+      "timestamp": 1770952602046,
+      "type": "received",
+      "payload": "[raw: ]"
+    },
+    {
+      "timestamp": 1770952602055,
+      "type": "received",
+      "payload": "[raw: ]"
+    },
+    {
+      "timestamp": 1770952602064,
+      "type": "received",
+      "payload": "[raw: ]"
+    },
+    {
+      "timestamp": 1770952602075,
+      "type": "received",
+      "payload": "[raw: ]"
+    },
+    {
+      "timestamp": 1770952602085,
+      "type": "received",
+      "payload": "[raw: ]"
+    },
+    {
+      "timestamp": 1770952602094,
+      "type": "received",
+      "payload": "[raw: ]"
+    },
+    {
+      "timestamp": 1770952602114,
+      "type": "received",
+      "payload": "[raw: ]"
+    },
+    {
+      "timestamp": 1770952602114,
+      "type": "received",
+      "payload": "[raw: ]"
+    },
+    {
+      "timestamp": 1770952602123,
+      "type": "received",
+      "payload": "[raw: ]"
+    },
+    {
+      "timestamp": 1770952602133,
+      "type": "received",
+      "payload": "[raw: ]"
+    },
+    {
+      "timestamp": 1770952602143,
+      "type": "received",
+      "payload": "[raw: ]"
+    },
+    {
+      "timestamp": 1770952602152,
+      "type": "received",
+      "payload": "[raw: ]"
+    },
+    {
+      "timestamp": 1770952602162,
+      "type": "received",
+      "payload": "[raw: ]"
+    },
+    {
+      "timestamp": 1770952602179,
+      "type": "received",
+      "payload": "[raw: ]"
+    },
+    {
+      "timestamp": 1770952602183,
+      "type": "received",
+      "payload": "[raw: ]"
+    },
+    {
+      "timestamp": 1770952602213,
+      "type": "received",
+      "payload": "[raw: ]"
+    },
+    {
+      "timestamp": 1770952602213,
+      "type": "received",
+      "payload": "[raw: ]"
+    },
+    {
+      "timestamp": 1770952602213,
+      "type": "received",
+      "payload": "[raw: ]"
+    },
+    {
+      "timestamp": 1770952602231,
+      "type": "received",
+      "payload": "[raw: ]"
+    },
+    {
+      "timestamp": 1770952602232,
+      "type": "received",
+      "payload": "[raw: ]"
+    },
+    {
+      "timestamp": 1770952602242,
+      "type": "received",
+      "payload": "[raw: ]"
+    },
+    {
+      "timestamp": 1770952602262,
+      "type": "received",
+      "payload": "[raw: ]"
+    },
+    {
+      "timestamp": 1770952602262,
+      "type": "received",
+      "payload": "[raw: ]"
+    },
+    {
+      "timestamp": 1770952602273,
+      "type": "received",
+      "payload": "[raw: ]"
+    },
+    {
+      "timestamp": 1770952602282,
+      "type": "received",
+      "payload": "[raw: ]"
+    },
+    {
+      "timestamp": 1770952602293,
+      "type": "received",
+      "payload": "[raw: ]"
+    },
+    {
+      "timestamp": 1770952602302,
+      "type": "received",
+      "payload": "[raw: ]"
+    },
+    {
+      "timestamp": 1770952602311,
+      "type": "received",
+      "payload": "[raw: ]"
+    },
+    {
+      "timestamp": 1770952602330,
+      "type": "received",
+      "payload": "[raw: ]"
+    },
+    {
+      "timestamp": 1770952602330,
+      "type": "received",
+      "payload": "[raw: ]"
+    },
+    {
+      "timestamp": 1770952602380,
+      "type": "received",
+      "payload": "[raw: ]"
+    },
+    {
+      "timestamp": 1770952602381,
+      "type": "received",
+      "payload": "[raw: ]"
+    },
+    {
+      "timestamp": 1770952602381,
+      "type": "received",
+      "payload": "[raw: ]"
+    },
+    {
+      "timestamp": 1770952602381,
+      "type": "received",
+      "payload": "[raw: ]"
+    },
+    {
+      "timestamp": 1770952602381,
+      "type": "received",
+      "payload": "[raw: ]"
+    },
+    {
+      "timestamp": 1770952602389,
+      "type": "received",
+      "payload": "[raw: ]"
+    },
+    {
+      "timestamp": 1770952602410,
+      "type": "received",
+      "payload": "[raw: ]"
+    },
+    {
+      "timestamp": 1770952602411,
+      "type": "received",
+      "payload": "[raw: ]"
+    },
+    {
+      "timestamp": 1770952602418,
+      "type": "received",
+      "payload": "[raw: ]"
+    },
+    {
+      "timestamp": 1770952602459,
+      "type": "received",
+      "payload": "[raw: ]"
+    },
+    {
+      "timestamp": 1770952602460,
+      "type": "received",
+      "payload": "[raw: ]"
+    },
+    {
+      "timestamp": 1770952602460,
+      "type": "received",
+      "payload": "[raw: ]"
+    },
+    {
+      "timestamp": 1770952602460,
+      "type": "received",
+      "payload": "[raw: ]"
+    },
+    {
+      "timestamp": 1770952602480,
+      "type": "received",
+      "payload": "[raw: ]"
+    },
+    {
+      "timestamp": 1770952602480,
+      "type": "received",
+      "payload": "[raw: ]"
+    },
+    {
+      "timestamp": 1770952602501,
+      "type": "received",
+      "payload": "[raw: ]"
+    },
+    {
+      "timestamp": 1770952605210,
+      "type": "received",
+      "payload": "[raw: ]"
+    },
+    {
+      "timestamp": 1770952608784,
+      "type": "sent",
+      "payload": "[text: {\"turns\":[{\"role\":\"user\",\"parts\":[{\"text\":\"Now draw an arrow pointing from the r]"
+    },
+    {
+      "timestamp": 1770952610677,
+      "type": "received",
+      "payload": "[raw: ]"
+    },
+    {
+      "timestamp": 1770952610678,
+      "type": "received",
+      "payload": "[raw: ]"
+    },
+    {
+      "timestamp": 1770952610685,
+      "type": "sent",
+      "payload": "[tool-response]"
+    },
+    {
+      "timestamp": 1770952611014,
+      "type": "received",
+      "payload": "[raw: ]"
+    },
+    {
+      "timestamp": 1770952611019,
+      "type": "sent",
+      "payload": "[tool-response]"
+    },
+    {
+      "timestamp": 1770952611367,
+      "type": "received",
+      "payload": "[raw: ]"
+    },
+    {
+      "timestamp": 1770952611376,
+      "type": "sent",
+      "payload": "[tool-response]"
+    },
+    {
+      "timestamp": 1770952614276,
+      "type": "sent",
+      "payload": "[text: {\"turns\":[{\"role\":\"user\",\"parts\":[{\"text\":\"Clear the canvas completely\"}]}],\"tur]"
+    },
+    {
+      "timestamp": 1770952614302,
+      "type": "received",
+      "payload": "[raw: ]"
+    },
+    {
+      "timestamp": 1770952614312,
+      "type": "received",
+      "payload": "[raw: ]"
+    },
+    {
+      "timestamp": 1770952614312,
+      "type": "received",
+      "payload": "[raw: ]"
+    },
+    {
+      "timestamp": 1770952614312,
+      "type": "received",
+      "payload": "[raw: ]"
+    },
+    {
+      "timestamp": 1770952614312,
+      "type": "received",
+      "payload": "[raw: ]"
+    },
+    {
+      "timestamp": 1770952614312,
+      "type": "received",
+      "payload": "[raw: ]"
+    },
+    {
+      "timestamp": 1770952614312,
+      "type": "received",
+      "payload": "[raw: ]"
+    },
+    {
+      "timestamp": 1770952614748,
+      "type": "received",
+      "payload": "[raw: ]"
+    },
+    {
+      "timestamp": 1770952614748,
+      "type": "received",
+      "payload": "[raw: ]"
+    },
+    {
+      "timestamp": 1770952614748,
+      "type": "received",
+      "payload": "[raw: ]"
+    },
+    {
+      "timestamp": 1770952614748,
+      "type": "received",
+      "payload": "[raw: ]"
+    },
+    {
+      "timestamp": 1770952614748,
+      "type": "received",
+      "payload": "[raw: ]"
+    },
+    {
+      "timestamp": 1770952614748,
+      "type": "received",
+      "payload": "[raw: ]"
+    },
+    {
+      "timestamp": 1770952614748,
+      "type": "received",
+      "payload": "[raw: ]"
+    },
+    {
+      "timestamp": 1770952614748,
+      "type": "received",
+      "payload": "[raw: ]"
+    },
+    {
+      "timestamp": 1770952614773,
+      "type": "received",
+      "payload": "[raw: ]"
+    },
+    {
+      "timestamp": 1770952614773,
+      "type": "received",
+      "payload": "[raw: ]"
+    },
+    {
+      "timestamp": 1770952614773,
+      "type": "received",
+      "payload": "[raw: ]"
+    },
+    {
+      "timestamp": 1770952614773,
+      "type": "received",
+      "payload": "[raw: ]"
+    },
+    {
+      "timestamp": 1770952614774,
+      "type": "received",
+      "payload": "[raw: ]"
+    },
+    {
+      "timestamp": 1770952614774,
+      "type": "received",
+      "payload": "[raw: ]"
+    },
+    {
+      "timestamp": 1770952614774,
+      "type": "received",
+      "payload": "[raw: ]"
+    },
+    {
+      "timestamp": 1770952614777,
+      "type": "received",
+      "payload": "[raw: ]"
+    },
+    {
+      "timestamp": 1770952614777,
+      "type": "received",
+      "payload": "[raw: ]"
+    },
+    {
+      "timestamp": 1770952614777,
+      "type": "received",
+      "payload": "[raw: ]"
+    },
+    {
+      "timestamp": 1770952614777,
+      "type": "received",
+      "payload": "[raw: ]"
+    },
+    {
+      "timestamp": 1770952614777,
+      "type": "received",
+      "payload": "[raw: ]"
+    },
+    {
+      "timestamp": 1770952614778,
+      "type": "received",
+      "payload": "[raw: ]"
+    },
+    {
+      "timestamp": 1770952614778,
+      "type": "received",
+      "payload": "[raw: ]"
+    },
+    {
+      "timestamp": 1770952614778,
+      "type": "received",
+      "payload": "[raw: ]"
+    },
+    {
+      "timestamp": 1770952614779,
+      "type": "received",
+      "payload": "[raw: ]"
+    },
+    {
+      "timestamp": 1770952614779,
+      "type": "received",
+      "payload": "[raw: ]"
+    },
+    {
+      "timestamp": 1770952614779,
+      "type": "received",
+      "payload": "[raw: ]"
+    },
+    {
+      "timestamp": 1770952614780,
+      "type": "received",
+      "payload": "[raw: ]"
+    },
+    {
+      "timestamp": 1770952614781,
+      "type": "received",
+      "payload": "[raw: ]"
+    },
+    {
+      "timestamp": 1770952614781,
+      "type": "received",
+      "payload": "[raw: ]"
+    },
+    {
+      "timestamp": 1770952614781,
+      "type": "received",
+      "payload": "[raw: ]"
+    },
+    {
+      "timestamp": 1770952614781,
+      "type": "received",
+      "payload": "[raw: ]"
+    },
+    {
+      "timestamp": 1770952614782,
+      "type": "received",
+      "payload": "[raw: ]"
+    },
+    {
+      "timestamp": 1770952614782,
+      "type": "received",
+      "payload": "[raw: ]"
+    },
+    {
+      "timestamp": 1770952614783,
+      "type": "received",
+      "payload": "[raw: ]"
+    },
+    {
+      "timestamp": 1770952614783,
+      "type": "received",
+      "payload": "[raw: ]"
+    },
+    {
+      "timestamp": 1770952614784,
+      "type": "received",
+      "payload": "[raw: ]"
+    },
+    {
+      "timestamp": 1770952614793,
+      "type": "received",
+      "payload": "[raw: ]"
+    },
+    {
+      "timestamp": 1770952614794,
+      "type": "received",
+      "payload": "[raw: ]"
+    },
+    {
+      "timestamp": 1770952614794,
+      "type": "received",
+      "payload": "[raw: ]"
+    },
+    {
+      "timestamp": 1770952614794,
+      "type": "received",
+      "payload": "[raw: ]"
+    },
+    {
+      "timestamp": 1770952614794,
+      "type": "received",
+      "payload": "[raw: ]"
+    },
+    {
+      "timestamp": 1770952614794,
+      "type": "received",
+      "payload": "[raw: ]"
+    },
+    {
+      "timestamp": 1770952614794,
+      "type": "received",
+      "payload": "[raw: ]"
+    },
+    {
+      "timestamp": 1770952614794,
+      "type": "received",
+      "payload": "[raw: ]"
+    },
+    {
+      "timestamp": 1770952614795,
+      "type": "received",
+      "payload": "[raw: ]"
+    },
+    {
+      "timestamp": 1770952614795,
+      "type": "received",
+      "payload": "[raw: ]"
+    },
+    {
+      "timestamp": 1770952614795,
+      "type": "received",
+      "payload": "[raw: ]"
+    },
+    {
+      "timestamp": 1770952614795,
+      "type": "received",
+      "payload": "[raw: ]"
+    },
+    {
+      "timestamp": 1770952614795,
+      "type": "received",
+      "payload": "[raw: ]"
+    },
+    {
+      "timestamp": 1770952614795,
+      "type": "received",
+      "payload": "[raw: ]"
+    },
+    {
+      "timestamp": 1770952614795,
+      "type": "received",
+      "payload": "[raw: ]"
+    },
+    {
+      "timestamp": 1770952614795,
+      "type": "received",
+      "payload": "[raw: ]"
+    },
+    {
+      "timestamp": 1770952614795,
+      "type": "received",
+      "payload": "[raw: ]"
+    },
+    {
+      "timestamp": 1770952614796,
+      "type": "received",
+      "payload": "[raw: ]"
+    },
+    {
+      "timestamp": 1770952614796,
+      "type": "received",
+      "payload": "[raw: ]"
+    },
+    {
+      "timestamp": 1770952614798,
+      "type": "received",
+      "payload": "[raw: ]"
+    },
+    {
+      "timestamp": 1770952614798,
+      "type": "received",
+      "payload": "[raw: ]"
+    },
+    {
+      "timestamp": 1770952614798,
+      "type": "received",
+      "payload": "[raw: ]"
+    },
+    {
+      "timestamp": 1770952614798,
+      "type": "received",
+      "payload": "[raw: ]"
+    },
+    {
+      "timestamp": 1770952614798,
+      "type": "received",
+      "payload": "[raw: ]"
+    },
+    {
+      "timestamp": 1770952614798,
+      "type": "received",
+      "payload": "[raw: ]"
+    },
+    {
+      "timestamp": 1770952614798,
+      "type": "received",
+      "payload": "[raw: ]"
+    },
+    {
+      "timestamp": 1770952614798,
+      "type": "received",
+      "payload": "[raw: ]"
+    },
+    {
+      "timestamp": 1770952614798,
+      "type": "received",
+      "payload": "[raw: ]"
+    },
+    {
+      "timestamp": 1770952614798,
+      "type": "received",
+      "payload": "[raw: ]"
+    },
+    {
+      "timestamp": 1770952614799,
+      "type": "received",
+      "payload": "[raw: ]"
+    },
+    {
+      "timestamp": 1770952614799,
+      "type": "received",
+      "payload": "[raw: ]"
+    },
+    {
+      "timestamp": 1770952614799,
+      "type": "received",
+      "payload": "[raw: ]"
+    },
+    {
+      "timestamp": 1770952614833,
+      "type": "received",
+      "payload": "[raw: ]"
+    },
+    {
+      "timestamp": 1770952614834,
+      "type": "received",
+      "payload": "[raw: ]"
+    },
+    {
+      "timestamp": 1770952614834,
+      "type": "received",
+      "payload": "[raw: ]"
+    },
+    {
+      "timestamp": 1770952614834,
+      "type": "received",
+      "payload": "[raw: ]"
+    },
+    {
+      "timestamp": 1770952614834,
+      "type": "received",
+      "payload": "[raw: ]"
+    },
+    {
+      "timestamp": 1770952614873,
+      "type": "received",
+      "payload": "[raw: ]"
+    },
+    {
+      "timestamp": 1770952614873,
+      "type": "received",
+      "payload": "[raw: ]"
+    },
+    {
+      "timestamp": 1770952614873,
+      "type": "received",
+      "payload": "[raw: ]"
+    },
+    {
+      "timestamp": 1770952614873,
+      "type": "received",
+      "payload": "[raw: ]"
+    },
+    {
+      "timestamp": 1770952614920,
+      "type": "received",
+      "payload": "[raw: ]"
+    },
+    {
+      "timestamp": 1770952614920,
+      "type": "received",
+      "payload": "[raw: ]"
+    },
+    {
+      "timestamp": 1770952614920,
+      "type": "received",
+      "payload": "[raw: ]"
+    },
+    {
+      "timestamp": 1770952614920,
+      "type": "received",
+      "payload": "[raw: ]"
+    },
+    {
+      "timestamp": 1770952614920,
+      "type": "received",
+      "payload": "[raw: ]"
+    },
+    {
+      "timestamp": 1770952614947,
+      "type": "received",
+      "payload": "[raw: ]"
+    },
+    {
+      "timestamp": 1770952614947,
+      "type": "received",
+      "payload": "[raw: ]"
+    },
+    {
+      "timestamp": 1770952614947,
+      "type": "received",
+      "payload": "[raw: ]"
+    },
+    {
+      "timestamp": 1770952614970,
+      "type": "received",
+      "payload": "[raw: ]"
+    },
+    {
+      "timestamp": 1770952617542,
+      "type": "sent",
+      "payload": "[text: {\"turns\":[{\"role\":\"user\",\"parts\":[{\"text\":\"Create a portal to the solar system s]"
+    },
+    {
+      "timestamp": 1770952618881,
+      "type": "received",
+      "payload": "[raw: ]"
+    },
+    {
+      "timestamp": 1770952620667,
+      "type": "received",
+      "payload": "[raw: ]"
+    },
+    {
+      "timestamp": 1770952620674,
+      "type": "received",
+      "payload": "[raw: ]"
+    },
+    {
+      "timestamp": 1770952620678,
+      "type": "sent",
+      "payload": "[tool-response]"
+    },
+    {
+      "timestamp": 1770952621090,
+      "type": "received",
+      "payload": "[raw: ]"
+    },
+    {
+      "timestamp": 1770952621094,
+      "type": "sent",
+      "payload": "[tool-response]"
+    },
+    {
+      "timestamp": 1770952621441,
+      "type": "received",
+      "payload": "[raw: ]"
+    },
+    {
+      "timestamp": 1770952621445,
+      "type": "sent",
+      "payload": "[tool-response]"
+    },
+    {
+      "timestamp": 1770952622245,
+      "type": "sent",
+      "payload": "[unknown: type]"
+    },
+    {
+      "timestamp": 1770952622448,
+      "type": "received",
+      "payload": "[raw: ]"
+    },
+    {
+      "timestamp": 1770952622448,
+      "type": "received",
+      "payload": "[raw: ]"
+    },
+    {
+      "timestamp": 1770952622449,
+      "type": "received",
+      "payload": "[raw: ]"
+    },
+    {
+      "timestamp": 1770952622487,
+      "type": "received",
+      "payload": "[raw: ]"
+    },
+    {
+      "timestamp": 1770952622488,
+      "type": "received",
+      "payload": "[raw: ]"
+    },
+    {
+      "timestamp": 1770952622488,
+      "type": "received",
+      "payload": "[raw: ]"
+    },
+    {
+      "timestamp": 1770952622495,
+      "type": "received",
+      "payload": "[raw: ]"
+    },
+    {
+      "timestamp": 1770952622506,
+      "type": "received",
+      "payload": "[raw: ]"
+    },
+    {
+      "timestamp": 1770952622514,
+      "type": "received",
+      "payload": "[raw: ]"
+    },
+    {
+      "timestamp": 1770952622527,
+      "type": "received",
+      "payload": "[raw: ]"
+    },
+    {
+      "timestamp": 1770952622545,
+      "type": "received",
+      "payload": "[raw: ]"
+    },
+    {
+      "timestamp": 1770952622545,
+      "type": "received",
+      "payload": "[raw: ]"
+    },
+    {
+      "timestamp": 1770952622564,
+      "type": "received",
+      "payload": "[raw: ]"
+    },
+    {
+      "timestamp": 1770952622564,
+      "type": "received",
+      "payload": "[raw: ]"
+    },
+    {
+      "timestamp": 1770952622580,
+      "type": "received",
+      "payload": "[raw: ]"
+    },
+    {
+      "timestamp": 1770952622584,
+      "type": "received",
+      "payload": "[raw: ]"
+    },
+    {
+      "timestamp": 1770952622594,
+      "type": "received",
+      "payload": "[raw: ]"
+    },
+    {
+      "timestamp": 1770952622618,
+      "type": "received",
+      "payload": "[raw: ]"
+    },
+    {
+      "timestamp": 1770952622618,
+      "type": "received",
+      "payload": "[raw: ]"
+    },
+    {
+      "timestamp": 1770952622626,
+      "type": "received",
+      "payload": "[raw: ]"
+    },
+    {
+      "timestamp": 1770952622637,
+      "type": "received",
+      "payload": "[raw: ]"
+    },
+    {
+      "timestamp": 1770952622646,
+      "type": "received",
+      "payload": "[raw: ]"
+    },
+    {
+      "timestamp": 1770952622656,
+      "type": "received",
+      "payload": "[raw: ]"
+    },
+    {
+      "timestamp": 1770952622667,
+      "type": "received",
+      "payload": "[raw: ]"
+    },
+    {
+      "timestamp": 1770952622676,
+      "type": "received",
+      "payload": "[raw: ]"
+    },
+    {
+      "timestamp": 1770952622686,
+      "type": "received",
+      "payload": "[raw: ]"
+    },
+    {
+      "timestamp": 1770952622695,
+      "type": "received",
+      "payload": "[raw: ]"
+    },
+    {
+      "timestamp": 1770952622707,
+      "type": "received",
+      "payload": "[raw: ]"
+    },
+    {
+      "timestamp": 1770952622728,
+      "type": "received",
+      "payload": "[raw: ]"
+    },
+    {
+      "timestamp": 1770952622728,
+      "type": "received",
+      "payload": "[raw: ]"
+    },
+    {
+      "timestamp": 1770952622738,
+      "type": "received",
+      "payload": "[raw: ]"
+    },
+    {
+      "timestamp": 1770952622747,
+      "type": "received",
+      "payload": "[raw: ]"
+    },
+    {
+      "timestamp": 1770952622757,
+      "type": "received",
+      "payload": "[raw: ]"
+    },
+    {
+      "timestamp": 1770952622766,
+      "type": "received",
+      "payload": "[raw: ]"
+    },
+    {
+      "timestamp": 1770952622788,
+      "type": "received",
+      "payload": "[raw: ]"
+    },
+    {
+      "timestamp": 1770952622797,
+      "type": "received",
+      "payload": "[raw: ]"
+    },
+    {
+      "timestamp": 1770952622797,
+      "type": "received",
+      "payload": "[raw: ]"
+    },
+    {
+      "timestamp": 1770952622818,
+      "type": "received",
+      "payload": "[raw: ]"
+    },
+    {
+      "timestamp": 1770952622818,
+      "type": "received",
+      "payload": "[raw: ]"
+    },
+    {
+      "timestamp": 1770952622830,
+      "type": "received",
+      "payload": "[raw: ]"
+    },
+    {
+      "timestamp": 1770952622839,
+      "type": "received",
+      "payload": "[raw: ]"
+    },
+    {
+      "timestamp": 1770952622881,
+      "type": "received",
+      "payload": "[raw: ]"
+    },
+    {
+      "timestamp": 1770952622881,
+      "type": "received",
+      "payload": "[raw: ]"
+    },
+    {
+      "timestamp": 1770952622881,
+      "type": "received",
+      "payload": "[raw: ]"
+    },
+    {
+      "timestamp": 1770952622881,
+      "type": "received",
+      "payload": "[raw: ]"
+    },
+    {
+      "timestamp": 1770952622887,
+      "type": "received",
+      "payload": "[raw: ]"
+    },
+    {
+      "timestamp": 1770952622896,
+      "type": "received",
+      "payload": "[raw: ]"
+    },
+    {
+      "timestamp": 1770952622919,
+      "type": "received",
+      "payload": "[raw: ]"
+    },
+    {
+      "timestamp": 1770952622919,
+      "type": "received",
+      "payload": "[raw: ]"
+    },
+    {
+      "timestamp": 1770952622939,
+      "type": "received",
+      "payload": "[raw: ]"
+    },
+    {
+      "timestamp": 1770952622939,
+      "type": "received",
+      "payload": "[raw: ]"
+    },
+    {
+      "timestamp": 1770952622974,
+      "type": "received",
+      "payload": "[raw: ]"
+    },
+    {
+      "timestamp": 1770952622974,
+      "type": "received",
+      "payload": "[raw: ]"
+    },
+    {
+      "timestamp": 1770952622974,
+      "type": "received",
+      "payload": "[raw: ]"
+    },
+    {
+      "timestamp": 1770952622995,
+      "type": "received",
+      "payload": "[raw: ]"
+    },
+    {
+      "timestamp": 1770952623001,
+      "type": "received",
+      "payload": "[raw: ]"
+    },
+    {
+      "timestamp": 1770952623015,
+      "type": "received",
+      "payload": "[raw: ]"
+    },
+    {
+      "timestamp": 1770952623027,
+      "type": "received",
+      "payload": "[raw: ]"
+    },
+    {
+      "timestamp": 1770952623046,
+      "type": "received",
+      "payload": "[raw: ]"
+    },
+    {
+      "timestamp": 1770952623046,
+      "type": "received",
+      "payload": "[raw: ]"
+    },
+    {
+      "timestamp": 1770952623078,
+      "type": "received",
+      "payload": "[raw: ]"
+    },
+    {
+      "timestamp": 1770952623079,
+      "type": "received",
+      "payload": "[raw: ]"
+    },
+    {
+      "timestamp": 1770952623086,
+      "type": "received",
+      "payload": "[raw: ]"
+    },
+    {
+      "timestamp": 1770952623086,
+      "type": "received",
+      "payload": "[raw: ]"
+    },
+    {
+      "timestamp": 1770952623095,
+      "type": "received",
+      "payload": "[raw: ]"
+    },
+    {
+      "timestamp": 1770952623115,
+      "type": "received",
+      "payload": "[raw: ]"
+    },
+    {
+      "timestamp": 1770952623115,
+      "type": "received",
+      "payload": "[raw: ]"
+    },
+    {
+      "timestamp": 1770952623132,
+      "type": "received",
+      "payload": "[raw: ]"
+    },
+    {
+      "timestamp": 1770952623151,
+      "type": "received",
+      "payload": "[raw: ]"
+    },
+    {
+      "timestamp": 1770952623193,
+      "type": "received",
+      "payload": "[raw: ]"
+    },
+    {
+      "timestamp": 1770952623193,
+      "type": "received",
+      "payload": "[raw: ]"
+    },
+    {
+      "timestamp": 1770952623193,
+      "type": "received",
+      "payload": "[raw: ]"
+    },
+    {
+      "timestamp": 1770952623193,
+      "type": "received",
+      "payload": "[raw: ]"
+    },
+    {
+      "timestamp": 1770952623202,
+      "type": "received",
+      "payload": "[raw: ]"
+    },
+    {
+      "timestamp": 1770952623211,
+      "type": "received",
+      "payload": "[raw: ]"
+    },
+    {
+      "timestamp": 1770952623237,
+      "type": "received",
+      "payload": "[raw: ]"
+    },
+    {
+      "timestamp": 1770952623237,
+      "type": "received",
+      "payload": "[raw: ]"
+    },
+    {
+      "timestamp": 1770952623271,
+      "type": "received",
+      "payload": "[raw: ]"
+    },
+    {
+      "timestamp": 1770952623271,
+      "type": "received",
+      "payload": "[raw: ]"
+    },
+    {
+      "timestamp": 1770952623285,
+      "type": "received",
+      "payload": "[raw: ]"
+    },
+    {
+      "timestamp": 1770952623301,
+      "type": "received",
+      "payload": "[raw: ]"
+    },
+    {
+      "timestamp": 1770952623317,
+      "type": "received",
+      "payload": "[raw: ]"
+    },
+    {
+      "timestamp": 1770952623334,
+      "type": "received",
+      "payload": "[raw: ]"
+    },
+    {
+      "timestamp": 1770952623345,
+      "type": "received",
+      "payload": "[raw: ]"
+    },
+    {
+      "timestamp": 1770952623352,
+      "type": "received",
+      "payload": "[raw: ]"
+    },
+    {
+      "timestamp": 1770952623361,
+      "type": "received",
+      "payload": "[raw: ]"
+    },
+    {
+      "timestamp": 1770952623383,
+      "type": "received",
+      "payload": "[raw: ]"
+    },
+    {
+      "timestamp": 1770952623384,
+      "type": "received",
+      "payload": "[raw: ]"
+    },
+    {
+      "timestamp": 1770952623404,
+      "type": "received",
+      "payload": "[raw: ]"
+    },
+    {
+      "timestamp": 1770952623405,
+      "type": "received",
+      "payload": "[raw: ]"
+    },
+    {
+      "timestamp": 1770952623411,
+      "type": "received",
+      "payload": "[raw: ]"
+    },
+    {
+      "timestamp": 1770952623432,
+      "type": "received",
+      "payload": "[raw: ]"
+    },
+    {
+      "timestamp": 1770952623432,
+      "type": "received",
+      "payload": "[raw: ]"
+    },
+    {
+      "timestamp": 1770952623445,
+      "type": "received",
+      "payload": "[raw: ]"
+    },
+    {
+      "timestamp": 1770952623463,
+      "type": "received",
+      "payload": "[raw: ]"
+    },
+    {
+      "timestamp": 1770952623463,
+      "type": "received",
+      "payload": "[raw: ]"
+    },
+    {
+      "timestamp": 1770952623470,
+      "type": "received",
+      "payload": "[raw: ]"
+    },
+    {
+      "timestamp": 1770952623481,
+      "type": "received",
+      "payload": "[raw: ]"
+    },
+    {
+      "timestamp": 1770952623523,
+      "type": "received",
+      "payload": "[raw: ]"
+    },
+    {
+      "timestamp": 1770952623523,
+      "type": "received",
+      "payload": "[raw: ]"
+    },
+    {
+      "timestamp": 1770952623523,
+      "type": "received",
+      "payload": "[raw: ]"
+    },
+    {
+      "timestamp": 1770952623524,
+      "type": "received",
+      "payload": "[raw: ]"
+    },
+    {
+      "timestamp": 1770952623538,
+      "type": "received",
+      "payload": "[raw: ]"
+    },
+    {
+      "timestamp": 1770952623542,
+      "type": "received",
+      "payload": "[raw: ]"
+    },
+    {
+      "timestamp": 1770952623552,
+      "type": "received",
+      "payload": "[raw: ]"
+    },
+    {
+      "timestamp": 1770952623561,
+      "type": "received",
+      "payload": "[raw: ]"
+    },
+    {
+      "timestamp": 1770952623572,
+      "type": "received",
+      "payload": "[raw: ]"
+    },
+    {
+      "timestamp": 1770952623582,
+      "type": "received",
+      "payload": "[raw: ]"
+    },
+    {
+      "timestamp": 1770952623595,
+      "type": "received",
+      "payload": "[raw: ]"
+    },
+    {
+      "timestamp": 1770952623601,
+      "type": "received",
+      "payload": "[raw: ]"
+    },
+    {
+      "timestamp": 1770952623611,
+      "type": "received",
+      "payload": "[raw: ]"
+    },
+    {
+      "timestamp": 1770952623621,
+      "type": "received",
+      "payload": "[raw: ]"
+    },
+    {
+      "timestamp": 1770952623654,
+      "type": "received",
+      "payload": "[raw: ]"
+    },
+    {
+      "timestamp": 1770952623654,
+      "type": "received",
+      "payload": "[raw: ]"
+    },
+    {
+      "timestamp": 1770952623654,
+      "type": "received",
+      "payload": "[raw: ]"
+    },
+    {
+      "timestamp": 1770952623681,
+      "type": "received",
+      "payload": "[raw: ]"
+    },
+    {
+      "timestamp": 1770952623681,
+      "type": "received",
+      "payload": "[raw: ]"
+    },
+    {
+      "timestamp": 1770952623682,
+      "type": "received",
+      "payload": "[raw: ]"
+    },
+    {
+      "timestamp": 1770952623691,
+      "type": "received",
+      "payload": "[raw: ]"
+    },
+    {
+      "timestamp": 1770952623731,
+      "type": "received",
+      "payload": "[raw: ]"
+    },
+    {
+      "timestamp": 1770952623731,
+      "type": "received",
+      "payload": "[raw: ]"
+    },
+    {
+      "timestamp": 1770952623731,
+      "type": "received",
+      "payload": "[raw: ]"
+    },
+    {
+      "timestamp": 1770952623731,
+      "type": "received",
+      "payload": "[raw: ]"
+    },
+    {
+      "timestamp": 1770952623751,
+      "type": "received",
+      "payload": "[raw: ]"
+    },
+    {
+      "timestamp": 1770952623751,
+      "type": "received",
+      "payload": "[raw: ]"
+    },
+    {
+      "timestamp": 1770952623762,
+      "type": "received",
+      "payload": "[raw: ]"
+    }
+  ],
+  "consoleErrors": [
+    "Failed to load resource: the server responded with a status of 404 (Not Found)"
+  ]
+}

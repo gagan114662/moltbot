@@ -1,0 +1,11 @@
+{
+  "": {
+    "swift-dependencies": "/Users/gaganarora/Desktop/my projects/moltbot/Swabble/.build/arm64-apple-macosx/debug/swabbleTests.build/master.swiftdeps"
+  },
+  "/Users/gaganarora/Desktop/my projects/moltbot/Swabble/Tests/swabbleTests/ConfigTests.swift": {
+    "dependencies": "/Users/gaganarora/Desktop/my projects/moltbot/Swabble/.build/arm64-apple-macosx/debug/swabbleTests.build/ConfigTests.d",
+    "object": "/Users/gaganarora/Desktop/my projects/moltbot/Swabble/.build/arm64-apple-macosx/debug/swabbleTests.build/ConfigTests.swift.o",
+    "swiftmodule": "/Users/gaganarora/Desktop/my projects/moltbot/Swabble/.build/arm64-apple-macosx/debug/swabbleTests.build/ConfigTests~partial.swiftmodule",
+    "swift-dependencies": "/Users/gaganarora/Desktop/my projects/moltbot/Swabble/.build/arm64-apple-macosx/debug/swabbleTests.build/ConfigTests.swiftdeps"
+  }
+}

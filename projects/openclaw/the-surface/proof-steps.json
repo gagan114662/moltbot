@@ -1,0 +1,23 @@
+{
+  "steps": [
+    { "action": "waitFor", "selector": ".tl-canvas", "timeoutMs": 10000 },
+    { "action": "screenshot", "label": "01-canvas-loaded" },
+    { "action": "waitForText", "text": "What's on your mind?", "timeoutMs": 5000 },
+    { "action": "screenshot", "label": "02-idle-greeting" },
+    { "action": "waitFor", "selector": "input[type='text']", "timeoutMs": 5000 },
+    { "action": "screenshot", "label": "03-text-input-visible" },
+    { "action": "fill", "selector": "input[type='text']", "value": "fractions" },
+    { "action": "press", "key": "Enter" },
+    { "action": "wait", "ms": 6000 },
+    { "action": "screenshot", "label": "04-after-fractions" },
+    { "action": "fill", "selector": "input[type='text']", "value": "solar system" },
+    { "action": "press", "key": "Enter" },
+    { "action": "wait", "ms": 3000 },
+    { "action": "screenshot", "label": "05-after-solar-system" },
+    { "action": "fill", "selector": "input[type='text']", "value": "cell" },
+    { "action": "press", "key": "Enter" },
+    { "action": "wait", "ms": 3000 },
+    { "action": "screenshot", "label": "06-after-cell" },
+    { "action": "screenshot", "label": "07-final-state" }
+  ]
+}

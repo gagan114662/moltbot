@@ -1,0 +1,64 @@
+{
+  "object" : {
+    "artifacts" : [
+
+    ],
+    "dependencies" : [
+      {
+        "basedOn" : null,
+        "packageRef" : {
+          "identity" : "commander",
+          "kind" : "remoteSourceControl",
+          "location" : "https://github.com/steipete/Commander.git",
+          "name" : "Commander"
+        },
+        "state" : {
+          "checkoutState" : {
+            "revision" : "9e349575c8e3c6745e81fe19e5bb5efa01b078ce",
+            "version" : "0.2.1"
+          },
+          "name" : "sourceControlCheckout"
+        },
+        "subpath" : "Commander"
+      },
+      {
+        "basedOn" : null,
+        "packageRef" : {
+          "identity" : "swift-syntax",
+          "kind" : "remoteSourceControl",
+          "location" : "https://github.com/swiftlang/swift-syntax.git",
+          "name" : "swift-syntax"
+        },
+        "state" : {
+          "checkoutState" : {
+            "revision" : "0687f71944021d616d34d922343dcef086855920",
+            "version" : "600.0.1"
+          },
+          "name" : "sourceControlCheckout"
+        },
+        "subpath" : "swift-syntax"
+      },
+      {
+        "basedOn" : null,
+        "packageRef" : {
+          "identity" : "swift-testing",
+          "kind" : "remoteSourceControl",
+          "location" : "https://github.com/apple/swift-testing",
+          "name" : "swift-testing"
+        },
+        "state" : {
+          "checkoutState" : {
+            "revision" : "399f76dcd91e4c688ca2301fa24a8cc6d9927211",
+            "version" : "0.99.0"
+          },
+          "name" : "sourceControlCheckout"
+        },
+        "subpath" : "swift-testing"
+      }
+    ],
+    "prebuilts" : [
+
+    ]
+  },
+  "version" : 7
+}

@@ -1,0 +1,59 @@
+{
+  "": {
+    "swift-dependencies": "/Users/gaganarora/Desktop/my projects/moltbot/Swabble/.build/arm64-apple-macosx/debug/Commander.build/master.swiftdeps"
+  },
+  "/Users/gaganarora/Desktop/my projects/moltbot/Swabble/.build/checkouts/Commander/Sources/Commander/CommandSignature.swift": {
+    "dependencies": "/Users/gaganarora/Desktop/my projects/moltbot/Swabble/.build/arm64-apple-macosx/debug/Commander.build/CommandSignature.d",
+    "object": "/Users/gaganarora/Desktop/my projects/moltbot/Swabble/.build/arm64-apple-macosx/debug/Commander.build/CommandSignature.swift.o",
+    "swiftmodule": "/Users/gaganarora/Desktop/my projects/moltbot/Swabble/.build/arm64-apple-macosx/debug/Commander.build/CommandSignature~partial.swiftmodule",
+    "swift-dependencies": "/Users/gaganarora/Desktop/my projects/moltbot/Swabble/.build/arm64-apple-macosx/debug/Commander.build/CommandSignature.swiftdeps"
+  },
+  "/Users/gaganarora/Desktop/my projects/moltbot/Swabble/.build/checkouts/Commander/Sources/Commander/Errors.swift": {
+    "dependencies": "/Users/gaganarora/Desktop/my projects/moltbot/Swabble/.build/arm64-apple-macosx/debug/Commander.build/Errors.d",
+    "object": "/Users/gaganarora/Desktop/my projects/moltbot/Swabble/.build/arm64-apple-macosx/debug/Commander.build/Errors.swift.o",
+    "swiftmodule": "/Users/gaganarora/Desktop/my projects/moltbot/Swabble/.build/arm64-apple-macosx/debug/Commander.build/Errors~partial.swiftmodule",
+    "swift-dependencies": "/Users/gaganarora/Desktop/my projects/moltbot/Swabble/.build/arm64-apple-macosx/debug/Commander.build/Errors.swiftdeps"
+  },
+  "/Users/gaganarora/Desktop/my projects/moltbot/Swabble/.build/checkouts/Commander/Sources/Commander/ExpressibleFromArgument.swift": {
+    "dependencies": "/Users/gaganarora/Desktop/my projects/moltbot/Swabble/.build/arm64-apple-macosx/debug/Commander.build/ExpressibleFromArgument.d",
+    "object": "/Users/gaganarora/Desktop/my projects/moltbot/Swabble/.build/arm64-apple-macosx/debug/Commander.build/ExpressibleFromArgument.swift.o",
+    "swiftmodule": "/Users/gaganarora/Desktop/my projects/moltbot/Swabble/.build/arm64-apple-macosx/debug/Commander.build/ExpressibleFromArgument~partial.swiftmodule",
+    "swift-dependencies": "/Users/gaganarora/Desktop/my projects/moltbot/Swabble/.build/arm64-apple-macosx/debug/Commander.build/ExpressibleFromArgument.swiftdeps"
+  },
+  "/Users/gaganarora/Desktop/my projects/moltbot/Swabble/.build/checkouts/Commander/Sources/Commander/NameSpecification.swift": {
+    "dependencies": "/Users/gaganarora/Desktop/my projects/moltbot/Swabble/.build/arm64-apple-macosx/debug/Commander.build/NameSpecification.d",
+    "object": "/Users/gaganarora/Desktop/my projects/moltbot/Swabble/.build/arm64-apple-macosx/debug/Commander.build/NameSpecification.swift.o",
+    "swiftmodule": "/Users/gaganarora/Desktop/my projects/moltbot/Swabble/.build/arm64-apple-macosx/debug/Commander.build/NameSpecification~partial.swiftmodule",
+    "swift-dependencies": "/Users/gaganarora/Desktop/my projects/moltbot/Swabble/.build/arm64-apple-macosx/debug/Commander.build/NameSpecification.swiftdeps"
+  },
+  "/Users/gaganarora/Desktop/my projects/moltbot/Swabble/.build/checkouts/Commander/Sources/Commander/ParsableCommand.swift": {
+    "dependencies": "/Users/gaganarora/Desktop/my projects/moltbot/Swabble/.build/arm64-apple-macosx/debug/Commander.build/ParsableCommand.d",
+    "object": "/Users/gaganarora/Desktop/my projects/moltbot/Swabble/.build/arm64-apple-macosx/debug/Commander.build/ParsableCommand.swift.o",
+    "swiftmodule": "/Users/gaganarora/Desktop/my projects/moltbot/Swabble/.build/arm64-apple-macosx/debug/Commander.build/ParsableCommand~partial.swiftmodule",
+    "swift-dependencies": "/Users/gaganarora/Desktop/my projects/moltbot/Swabble/.build/arm64-apple-macosx/debug/Commander.build/ParsableCommand.swiftdeps"
+  },
+  "/Users/gaganarora/Desktop/my projects/moltbot/Swabble/.build/checkouts/Commander/Sources/Commander/Parser/CommandParser.swift": {
+    "dependencies": "/Users/gaganarora/Desktop/my projects/moltbot/Swabble/.build/arm64-apple-macosx/debug/Commander.build/CommandParser.d",
+    "object": "/Users/gaganarora/Desktop/my projects/moltbot/Swabble/.build/arm64-apple-macosx/debug/Commander.build/CommandParser.swift.o",
+    "swiftmodule": "/Users/gaganarora/Desktop/my projects/moltbot/Swabble/.build/arm64-apple-macosx/debug/Commander.build/CommandParser~partial.swiftmodule",
+    "swift-dependencies": "/Users/gaganarora/Desktop/my projects/moltbot/Swabble/.build/arm64-apple-macosx/debug/Commander.build/CommandParser.swiftdeps"
+  },
+  "/Users/gaganarora/Desktop/my projects/moltbot/Swabble/.build/checkouts/Commander/Sources/Commander/Parser/Tokenizer.swift": {
+    "dependencies": "/Users/gaganarora/Desktop/my projects/moltbot/Swabble/.build/arm64-apple-macosx/debug/Commander.build/Tokenizer.d",
+    "object": "/Users/gaganarora/Desktop/my projects/moltbot/Swabble/.build/arm64-apple-macosx/debug/Commander.build/Tokenizer.swift.o",
+    "swiftmodule": "/Users/gaganarora/Desktop/my projects/moltbot/Swabble/.build/arm64-apple-macosx/debug/Commander.build/Tokenizer~partial.swiftmodule",
+    "swift-dependencies": "/Users/gaganarora/Desktop/my projects/moltbot/Swabble/.build/arm64-apple-macosx/debug/Commander.build/Tokenizer.swiftdeps"
+  },
+  "/Users/gaganarora/Desktop/my projects/moltbot/Swabble/.build/checkouts/Commander/Sources/Commander/Program.swift": {
+    "dependencies": "/Users/gaganarora/Desktop/my projects/moltbot/Swabble/.build/arm64-apple-macosx/debug/Commander.build/Program.d",
+    "object": "/Users/gaganarora/Desktop/my projects/moltbot/Swabble/.build/arm64-apple-macosx/debug/Commander.build/Program.swift.o",
+    "swiftmodule": "/Users/gaganarora/Desktop/my projects/moltbot/Swabble/.build/arm64-apple-macosx/debug/Commander.build/Program~partial.swiftmodule",
+    "swift-dependencies": "/Users/gaganarora/Desktop/my projects/moltbot/Swabble/.build/arm64-apple-macosx/debug/Commander.build/Program.swiftdeps"
+  },
+  "/Users/gaganarora/Desktop/my projects/moltbot/Swabble/.build/checkouts/Commander/Sources/Commander/PropertyWrappers.swift": {
+    "dependencies": "/Users/gaganarora/Desktop/my projects/moltbot/Swabble/.build/arm64-apple-macosx/debug/Commander.build/PropertyWrappers.d",
+    "object": "/Users/gaganarora/Desktop/my projects/moltbot/Swabble/.build/arm64-apple-macosx/debug/Commander.build/PropertyWrappers.swift.o",
+    "swiftmodule": "/Users/gaganarora/Desktop/my projects/moltbot/Swabble/.build/arm64-apple-macosx/debug/Commander.build/PropertyWrappers~partial.swiftmodule",
+    "swift-dependencies": "/Users/gaganarora/Desktop/my projects/moltbot/Swabble/.build/arm64-apple-macosx/debug/Commander.build/PropertyWrappers.swiftdeps"
+  }
+}

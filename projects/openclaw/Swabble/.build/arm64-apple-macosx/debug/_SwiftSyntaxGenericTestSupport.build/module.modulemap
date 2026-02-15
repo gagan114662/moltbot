@@ -1,0 +1,4 @@
+module _SwiftSyntaxGenericTestSupport {
+    header "/Users/gaganarora/Desktop/my projects/moltbot/Swabble/.build/arm64-apple-macosx/debug/_SwiftSyntaxGenericTestSupport.build/_SwiftSyntaxGenericTestSupport-Swift.h"
+    requires objc
+}

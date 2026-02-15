@@ -1,0 +1,4 @@
+module swabblePackageTests {
+    header "/Users/gaganarora/Desktop/my projects/moltbot/Swabble/.build/arm64-apple-macosx/debug/swabblePackageTests.build/swabblePackageTests-Swift.h"
+    requires objc
+}

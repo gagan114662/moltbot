@@ -1,0 +1,8 @@
+{
+  "name": "The Surface",
+  "short_name": "Surface",
+  "start_url": "/",
+  "display": "fullscreen",
+  "background_color": "#FAFAF9",
+  "theme_color": "#FAFAF9"
+}
