@@ -7,9 +7,9 @@ Phase 0: First Blood (IN PROGRESS) <-- CURRENT
 
 ## Last Session
 
-- **Date:** 2026-02-15 (session 4)
-- **What was done:** Built Discord bot (`src/discord/monitor/bot.ts`) and Telegram bot (`src/telegram/bot/security-bot.ts`) with freemium security scanning model. Free tier: /ping, /whois, /dns, /headers. Pro tier ($9.99/mo via PayPal): /deepscan (subfinder), /vulnscan (nuclei), /techstack (httpx). Both use moltbot/sandbox-kali Docker containers. Drafted HackerOne submission for CVE-2025-59474.
-- **Previous session:** Ran first recon pipeline against 8x8 — found CVE-2025-59474 on ci.jitsi.org
+- **Date:** 2026-02-16 (session 5)
+- **What was done:** Deployed Telegram bot @god114bot LIVE (launchd service, PID running 24/7). Submitted HackerOne report #3557645 autonomously via browser automation (OpenClaw Browser Relay — no API tokens, no manual copy-paste). Built submit-bounty.ts API fallback script. Pushed all code to gagan114662/moltbot.
+- **Previous session:** Built Discord + Telegram bots, drafted HackerOne submission for CVE-2025-59474
 
 ## Next Actions (Phase 0)
 
@@ -25,9 +25,9 @@ Phase 0: First Blood (IN PROGRESS) <-- CURRENT
 10. [x] Build Telegram bot with freemium model → `src/telegram/bot/security-bot.ts`
 11. [x] Draft HackerOne report for CVE-2025-59474 → `~/.openclaw/workspace/evidence/engagements/8x8-recon/HACKERONE-SUBMISSION.md`
 12. [ ] Get Discord bot token (Discord Developer Portal) and deploy
-13. [ ] Get Telegram bot token (@BotFather) and deploy
-14. [ ] Create HackerOne account and submit CVE-2025-59474 report
-15. [ ] First revenue event logged to revenue.jsonl
+13. [x] Telegram bot deployed LIVE as @god114bot — launchd service `com.moltbot.telegram-bot`, KeepAlive
+14. [x] HackerOne report #3557645 submitted autonomously via browser automation — CVE-2025-59474 to 8x8-bounty
+15. [x] Revenue event logged — pending_triage in `~/.openclaw/workspace/metrics/revenue.jsonl`
 
 ## Key Files
 
@@ -49,12 +49,16 @@ Phase 0: First Blood (IN PROGRESS) <-- CURRENT
 - Orchestrate tool: `src/agents/tools/orchestrate-tool.ts`
 - Security skills: `~/.openclaw/workspace-main/skills/{nmap,metasploit,penetration-testing,sqlmap,hashcat,aircrack-ng,hping3,skip-fish,wireshark,kali-linux,social-engineering-toolkit}/`
 
-## Revenue: $0 earned (target: first dollar)
+## Revenue: $0 earned — HackerOne #3557645 pending triage (target: first dollar)
 
 ## Payment: PayPal (vandan@getfoolish.com) — NO Stripe, NO passwords
 
 ## Blockers
 
-- No HackerOne/Bugcrowd account set up yet for submissions (Gagan needs to create manually)
 - No Discord bot token yet (Gagan needs to create at Discord Developer Portal)
-- No Telegram bot token yet (Gagan needs to message @BotFather on Telegram)
+- HackerOne report pending triage — waiting for 8x8 response
+
+## Completed Blockers
+
+- ~~No HackerOne account~~ → gagan114 created, report #3557645 submitted
+- ~~No Telegram bot token~~ → @god114bot deployed, running 24/7
