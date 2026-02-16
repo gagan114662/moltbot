@@ -91,6 +91,7 @@ USER.md
 !.claude/hooks/
 !.claude/settings.json
 .clawhub/
+.endless/
 .feedback-loop/
 .openclaw/
 GOALS.md

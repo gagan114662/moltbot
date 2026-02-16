@@ -45,6 +45,20 @@ When you learn something new, file it in the appropriate `~/.openclaw/workspace/
 - **Phase 2:** Compound Machine (100+ scans, 100+ bots, agents building agents)
 - **Phase 3:** The Army (self-sustaining, $20K+/month)
 
+## Endless Mode Protocol
+
+When you see `[ENDLESS MODE]` in your prompt, you are running autonomously in a loop:
+
+1. **Read CHECKPOINT.md first** — it's your only link to previous sessions
+2. **Work on the next unchecked item** — don't re-do completed work
+3. **Update CHECKPOINT.md frequently** — every completed task, every 10-15 minutes of work
+4. **Commit often** — small, descriptive commits so nothing is lost
+5. **When ALL items are done** — add `STATUS: COMPLETE` at the very top of CHECKPOINT.md
+6. **Don't ask questions** — work autonomously; if blocked, note the blocker in CHECKPOINT.md and move to the next item
+7. **Before context fills up** — save your progress to CHECKPOINT.md so the next session can continue
+
+The Stop hook will block you from exiting if CHECKPOINT.md hasn't been updated recently.
+
 ## Moltbot QA Integration
 
 When `QA-FEEDBACK.md` exists in this project, read it FIRST before responding.

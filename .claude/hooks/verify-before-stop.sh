@@ -13,6 +13,20 @@ if [ "${OPENCLAW_AUTONOMOUS_MODE:-0}" = "1" ]; then
   exit 0
 fi
 
+# Endless mode: remind Claude to save checkpoint before stopping
+# (The actual checkpoint save happens inside Claude's session via CLAUDE.md instructions)
+if [ -f "$CWD/.endless/sessions.log" ] 2>/dev/null || [ -f "${CLAUDE_PROJECT_DIR:-.}/.endless/sessions.log" ] 2>/dev/null; then
+  CHECKPOINT_FILE="${CLAUDE_PROJECT_DIR:-$CWD}/CHECKPOINT.md"
+  if [ -f "$CHECKPOINT_FILE" ]; then
+    # Check if checkpoint was updated recently (within last 60 seconds)
+    CHECKPOINT_AGE=$(( $(date +%s) - $(stat -f%m "$CHECKPOINT_FILE" 2>/dev/null || stat -c%Y "$CHECKPOINT_FILE" 2>/dev/null || echo 0) ))
+    if [ "$CHECKPOINT_AGE" -gt 120 ]; then
+      jq -n '{ "decision": "block", "reason": "ENDLESS MODE: You must update CHECKPOINT.md before stopping. Write what you accomplished and what is next so the next session can continue." }'
+      exit 0
+    fi
+  fi
+fi
+
 # Prevent infinite loops: if a Stop hook already triggered continuation, allow stop.
 STOP_HOOK_ACTIVE=$(echo "$INPUT" | jq -r '.stop_hook_active // false')
 if [ "$STOP_HOOK_ACTIVE" = "true" ]; then
