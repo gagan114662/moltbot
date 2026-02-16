@@ -7,9 +7,9 @@ Phase 0: First Blood (IN PROGRESS) <-- CURRENT
 
 ## Last Session
 
-- **Date:** 2026-02-15 (session 3)
-- **What was done:** First recon pipeline completed against 8x8 (HackerOne program). Enumerated 8,916 subdomains across 16 domains, probed 141 live hosts, ran nuclei vulnerability scan. Found CVE-2025-59474 (medium) on ci.jitsi.org — Jenkins signup leaks internal node names. Also found weak TLS on dashboard.qa.ai.8x8.com, directory listing on backup-download.jitsi.org, and extensive staging/dev exposure. Full report at `~/.openclaw/workspace/evidence/engagements/8x8-recon/RECON-REPORT.md`.
-- **Findings:** 1 medium CVE, 1 low (weak TLS), 4 info-level findings
+- **Date:** 2026-02-15 (session 4)
+- **What was done:** Built Discord bot (`src/discord/monitor/bot.ts`) and Telegram bot (`src/telegram/bot/security-bot.ts`) with freemium security scanning model. Free tier: /ping, /whois, /dns, /headers. Pro tier ($9.99/mo via PayPal): /deepscan (subfinder), /vulnscan (nuclei), /techstack (httpx). Both use moltbot/sandbox-kali Docker containers. Drafted HackerOne submission for CVE-2025-59474.
+- **Previous session:** Ran first recon pipeline against 8x8 — found CVE-2025-59474 on ci.jitsi.org
 
 ## Next Actions (Phase 0)
 
@@ -21,9 +21,13 @@ Phase 0: First Blood (IN PROGRESS) <-- CURRENT
 6. [x] Test security sandbox against scanme.nmap.org — nmap, httpx confirmed working
 7. [x] Run Program Scout: scanned 8x8 (18 domains), Automattic (6), Airbnb (16)
 8. [x] Run first recon + scan pipeline end-to-end — 8,916 subs → 141 live → nuclei → CVE-2025-59474 found
-9. [ ] Deploy first Discord bot to a community
-10. [ ] Deploy first Telegram bot with freemium model
-11. [ ] First revenue event logged to revenue.jsonl
+9. [x] Build Discord bot with freemium model → `src/discord/monitor/bot.ts`
+10. [x] Build Telegram bot with freemium model → `src/telegram/bot/security-bot.ts`
+11. [x] Draft HackerOne report for CVE-2025-59474 → `~/.openclaw/workspace/evidence/engagements/8x8-recon/HACKERONE-SUBMISSION.md`
+12. [ ] Get Discord bot token (Discord Developer Portal) and deploy
+13. [ ] Get Telegram bot token (@BotFather) and deploy
+14. [ ] Create HackerOne account and submit CVE-2025-59474 report
+15. [ ] First revenue event logged to revenue.jsonl
 
 ## Key Files
 
@@ -37,6 +41,9 @@ Phase 0: First Blood (IN PROGRESS) <-- CURRENT
 - **Kali Dockerfile:** `docker/Dockerfile.sandbox-kali`
 - **Security compose:** `docker/docker-compose.security.yml`
 - **8x8 recon report:** `~/.openclaw/workspace/evidence/engagements/8x8-recon/RECON-REPORT.md`
+- **HackerOne submission:** `~/.openclaw/workspace/evidence/engagements/8x8-recon/HACKERONE-SUBMISSION.md`
+- **Discord bot:** `src/discord/monitor/bot.ts`
+- **Telegram bot:** `src/telegram/bot/security-bot.ts`
 - Delegation framework: `src/agents/delegation-framework.ts`
 - Browser delegate: `src/agents/tools/browser-delegate-tool.ts`
 - Orchestrate tool: `src/agents/tools/orchestrate-tool.ts`
@@ -48,5 +55,6 @@ Phase 0: First Blood (IN PROGRESS) <-- CURRENT
 
 ## Blockers
 
-- No HackerOne/Bugcrowd account set up yet for submissions
-- No Discord/Telegram bot tokens created yet
+- No HackerOne/Bugcrowd account set up yet for submissions (Gagan needs to create manually)
+- No Discord bot token yet (Gagan needs to create at Discord Developer Portal)
+- No Telegram bot token yet (Gagan needs to message @BotFather on Telegram)
