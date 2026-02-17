@@ -17,7 +17,6 @@
 import { execFile, execSync } from "node:child_process";
 import dns from "node:dns/promises";
 import fs from "node:fs";
-import http from "node:http";
 import https from "node:https";
 import path from "node:path";
 import { chromium, type Browser, type Page } from "playwright-core";
@@ -170,10 +169,7 @@ async function askAI(question: string): Promise<string> {
   return "AI temporarily unavailable. Try /help for commands.";
 }
 
-// --- ElevenLabs TTS ---
-
-const ELEVENLABS_API_KEY = "sk_91e5eade70ccf8fb243f419bdc1ab2d23e6b094dc9fb4ffc";
-const ELEVENLABS_VOICE_ID = "7NsaqHdLuKNFvEfjpUno";
+// --- TTS (macOS say) ---
 
 async function textToSpeechOgg(text: string): Promise<Buffer> {
   const ts = Date.now();
