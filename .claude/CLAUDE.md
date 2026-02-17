@@ -59,6 +59,62 @@ When you see `[ENDLESS MODE]` in your prompt, you are running autonomously in a 
 
 The Stop hook will block you from exiting if CHECKPOINT.md hasn't been updated recently.
 
+## Subagent Scaling Rules
+
+Scale the number of parallel subagents based on task complexity:
+
+| Task Type               | Subagents | Examples                                 |
+| ----------------------- | --------- | ---------------------------------------- |
+| Simple fix / lookup     | 0         | Typo fix, read a file, one-liner         |
+| Medium (1-2 files)      | 1-2       | Add a function, fix a bug, small feature |
+| Large (3+ files)        | 3-4       | New tool, multi-file feature, refactor   |
+| Research / architecture | 4-5       | Codebase exploration, design decisions   |
+
+## Tools-First Rule
+
+For every user request, **default to building a reusable tool** — not a one-off script.
+
+- Tools go in `projects/openclaw/tools/`
+- Each tool works as both a CLI script (`node --import tsx tools/X.ts '{...}'`) and an importable module
+- Tools output structured JSON for composability
+- Name tools by what they DO: `http-probe`, `idor-scan`, `race-test`, not `helper` or `utils`
+
+## Agent Tool Design Principles (from DeepAgents/Codex research)
+
+Apply these when building any tool or agent harness:
+
+### 1. Context Engineering for Agents
+
+- Onboard every tool with context: what directory structure to expect, what other tools exist, known pitfalls
+- Include problem-solving strategies in tool headers (not just API docs)
+- Reduce the error surface by providing examples of correct usage in the tool's help text
+
+### 2. Self-Verification Built In
+
+- Every tool MUST verify its own output before returning results
+- Don't trust the first plausible result — run sanity checks (e.g., IDOR scanner should verify baseline works before testing IDs)
+- Tools should include a `--verify` or `--dry-run` mode where practical
+- When a tool finds something, it should attempt to confirm (e.g., re-request with different timing)
+
+### 3. Tracing as Feedback
+
+- Every tool outputs structured JSON with timing, request/response details, and evidence
+- Include enough context in results for the agent to debug failures (not just "failed" — WHY it failed)
+- Log what was tried, what worked, what didn't — so the next run can learn from it
+
+### 4. Detect and Fix Bad Patterns
+
+- No blind retries — if a request fails, diagnose WHY before retrying
+- Validate inputs before making network requests (is the URL valid? is the auth token present?)
+- Include rate-limit awareness — back off when getting 429s, don't hammer endpoints
+- Timeout handling — every network call has a timeout, every tool has a max runtime
+
+### 5. Composability Over Monoliths
+
+- Tools should be small and composable — `http-probe` feeds into `idor-scan` which feeds into `auth-matrix`
+- Export types and functions so tools can import each other
+- Each tool handles ONE concern well, not everything poorly
+
 ## Moltbot QA Integration
 
 When `QA-FEEDBACK.md` exists in this project, read it FIRST before responding.

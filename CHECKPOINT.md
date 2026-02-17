@@ -7,23 +7,24 @@ Phase 0: First Blood (IN PROGRESS) <-- CURRENT
 
 ## Last Session
 
-- **Date:** 2026-02-17 (session 10)
+- **Date:** 2026-02-17 (session 11)
 - **What was done:**
-  - Pulled and reviewed 3 completed recon scans (GitHub, Shopify, Yahoo):
-    - GitHub: K8s pod names leaked via x-github-alive header (LOW, reportable)
-    - Shopify: Google Maps API key unrestricted + open redirect in identity/login (2 findings, reportable)
-    - Yahoo: K8s pod names via x-omg-env + Envoy routing disclosure (2 findings — but Yahoo uses Intigriti not HackerOne)
-  - All findings VERIFIED still valid via curl from local machine
-  - Drafted 3 new HackerOne reports (GitHub pod disclosure, Shopify API key, Shopify open redirect)
-  - Copied all 5 reports to ~/.openclaw/workspace/evidence/reports/ready-to-submit/
-  - Got past Cloudflare using local Chrome + CDP (residential IP works!)
-  - Login credentials accepted — BLOCKED on 2FA (authenticator code needed from user)
-  - Built h1-submit-all.mjs automation script — ready to submit all 5 reports once 2FA completes
-  - Launched Uber and GitLab recon scans (new targets)
-  - WooCommerce Algolia report being drafted
-  - Saved HackerOne API token (still needs API identifier from user)
-  - CTF solver in TU sandbox permanently blocked by Cloudflare — pivoted to local Chrome approach
-- **Previous session:** Built bounty pipeline, launched Shopify/GitHub/Yahoo scans, CTF solver attempt
+  - Pivoted from automated recon (all reports rejected as duplicates/out-of-scope) to application-level security testing tools
+  - Built 8 security testing tools in `projects/openclaw/tools/`:
+    - `http-probe.ts` — full HTTP client (foundation for all tools)
+    - `idor-scan.ts` — IDOR detection ($1K-$130K payouts)
+    - `race-test.ts` — race condition tester ($1K-$10K)
+    - `auth-matrix.ts` — authorization matrix ($2K-$20K)
+    - `endpoint-extract.ts` — JS bundle endpoint/secret extractor
+    - `ssrf-scan.ts` — SSRF with 40+ payloads ($2K-$50K)
+    - `graphql-probe.ts` — GraphQL introspection/abuse ($1K-$15K)
+    - `prompt-inject.ts` — AI prompt injection fuzzer ($500-$25K, +540% YoY)
+  - Created `tool-utils.ts` — shared hardening utilities (validation, retry, rate-limit, tracing)
+  - Hardened ALL 8 tools with: input validation, rate-limit handling, retry with backoff, structured tracing
+  - Battle-tested: all tools load cleanly, http-probe verified against httpbin.org, validation catches bad URLs
+  - Added DeepAgents principles + subagent scaling rules + tools-first rule to CLAUDE.md
+  - Saved HackerOne payout research to `~/.openclaw/workspace/research/hackerone-payouts/`
+- **Previous session:** HackerOne reports, Shopify/GitHub/Yahoo recon, CDP browser automation
 
 ## Next Actions (Phase 0)
 
@@ -96,6 +97,8 @@ BLOCKER: Need user to enter 2FA code in Chrome window on their screen
 - **8x8 CPaaS report:** `~/.openclaw/workspace/evidence/engagements/8x8-recon/HACKERONE-SUBMISSION-3-MAP.md`
 - **8x8 PayUI report:** `~/.openclaw/workspace/evidence/engagements/8x8-recon/HACKERONE-SUBMISSION-2-PAYUI.md`
 - Telegram bot: `src/telegram/bot/security-bot.ts`
+- **Security tools:** `projects/openclaw/tools/` (http-probe, idor-scan, ssrf-scan, race-test, auth-matrix, endpoint-extract, graphql-probe, prompt-inject, tool-utils)
+- **HackerOne research:** `~/.openclaw/workspace/research/hackerone-payouts/top-paying-bugs.md`
 
 ## Revenue: $0 earned — HackerOne #3557645 pending triage (target: first dollar)
 
