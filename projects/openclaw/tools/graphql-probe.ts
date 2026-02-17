@@ -31,12 +31,6 @@ type GraphQLConfig = {
   delay_ms?: number;
 };
 
-type GraphQLType = {
-  name: string;
-  kind: string;
-  fields?: { name: string; type: string; args: string[] }[];
-};
-
 type GraphQLFinding = {
   type: string;
   severity: "critical" | "high" | "medium" | "low" | "info";

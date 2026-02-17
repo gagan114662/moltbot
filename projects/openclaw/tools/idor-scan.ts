@@ -24,7 +24,7 @@
  *   }'
  */
 
-import { probe, type ProbeRequest } from "./http-probe.js";
+import { probe } from "./http-probe.js";
 import { validateUrl, validateRequired, Tracer, sleep } from "./tool-utils.js";
 
 type IDORConfig = {

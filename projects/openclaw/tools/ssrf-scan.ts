@@ -23,7 +23,7 @@
  *   }'
  */
 
-import { probe, type ProbeResponse } from "./http-probe.js";
+import { probe } from "./http-probe.js";
 import { validateUrl, validateRequired, Tracer, sleep } from "./tool-utils.js";
 
 type SSRFConfig = {

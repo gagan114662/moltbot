@@ -394,8 +394,6 @@ async function extractEndpoints(config: ExtractConfig): Promise<ExtractResult> {
   result.endpoints = [...uniqueEndpoints.values()];
 
   // Extract internal hostnames
-  const hostPattern =
-    /["'`](https?:\/\/[\w.-]+\.(?:internal|local|dev|staging|test|corp)[\w.-]*)["'`]/gi;
   const hostsSeen = new Set<string>();
   for (const ep of result.secrets.filter((s) => s.type === "internal_url")) {
     try {

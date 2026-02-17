@@ -105,7 +105,7 @@ async function fireRound(config: RaceConfig, roundNum: number): Promise<RaceRoun
   const successStr = config.success_indicator?.toLowerCase();
 
   // Pre-create all fetch promises, then fire them all at once
-  const start = performance.now();
+  const _batchStart = performance.now();
   const promises = Array.from({ length: concurrency }, (_, i) => {
     const reqStart = performance.now();
     return fetch(config.url, { ...init })
