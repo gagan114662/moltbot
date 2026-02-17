@@ -23,10 +23,14 @@ import makeWASocket, {
   DisconnectReason,
   useMultiFileAuthState,
   makeCacheableSignalKeyStore,
+  downloadContentFromMessage,
   type WASocket,
   type WAMessage,
 } from "@whiskeysockets/baileys";
+import { execFile } from "node:child_process";
+import { writeFile, readFile, unlink } from "node:fs/promises";
 import path from "node:path";
+import qrcode from "qrcode-terminal";
 
 const CREDS_DIR = path.join(
   process.env.HOME ?? "/tmp",
@@ -38,12 +42,123 @@ const CREDS_DIR = path.join(
 
 // Only respond to these numbers (prevent abuse)
 const ALLOWED_SENDERS = new Set([
-  "14379878666@s.whatsapp.net", // Gagan
+  "14379878666@s.whatsapp.net", // Gagan (phone JID)
+  "185512858005522@lid", // Gagan (linked identity)
 ]);
 
 const startTime = Date.now();
 let messagesReceived = 0;
 let messagesResponded = 0;
+// Track message IDs we sent to avoid infinite loops
+const sentByBot = new Set<string>();
+
+// --- AI via CLI tools (codex primary, claude fallback) ---
+const SYSTEM_PROMPT =
+  "You are Moltbot, a helpful AI assistant on WhatsApp. Keep responses concise (under 500 chars) since this is a chat app. Be direct and useful.";
+
+function runCli(cmd: string, args: string[], timeoutMs = 60000, cwd?: string): Promise<string> {
+  return new Promise((resolve, reject) => {
+    execFile(
+      cmd,
+      args,
+      { timeout: timeoutMs, maxBuffer: 1024 * 1024, cwd },
+      (err, stdout, stderr) => {
+        if (err) {
+          reject(new Error(`${cmd} failed: ${err.message} ${stderr?.slice(0, 200) ?? ""}`));
+          return;
+        }
+        resolve(stdout.trim());
+      },
+    );
+  });
+}
+
+async function askAI(question: string): Promise<string> {
+  const prompt = `${SYSTEM_PROMPT}\n\nUser question: ${question}`;
+
+  // Try Codex first
+  try {
+    const result = await runCli(
+      "codex",
+      ["exec", "--full-auto", "--skip-git-repo-check", prompt],
+      60000,
+      "/tmp",
+    );
+    if (result) {
+      console.log("[wa-bot] Answered via Codex");
+      return result;
+    }
+  } catch (err) {
+    console.log(`[wa-bot] Codex failed: ${(err as Error).message.slice(0, 100)}`);
+  }
+
+  // Fall back to Claude
+  try {
+    const result = await runCli(
+      "claude",
+      ["-p", "--max-turns", "1", "--model", "haiku", prompt],
+      60000,
+      "/tmp",
+    );
+    if (result) {
+      console.log("[wa-bot] Answered via Claude");
+      return result;
+    }
+  } catch (err) {
+    console.log(`[wa-bot] Claude failed: ${(err as Error).message.slice(0, 100)}`);
+  }
+
+  return "AI temporarily unavailable. Try /help for commands.";
+}
+
+async function transcribeVoiceNote(msg: WAMessage): Promise<string> {
+  const audioMsg = msg.message?.audioMessage;
+  if (!audioMsg) {
+    throw new Error("No audio message");
+  }
+
+  // Download & decrypt audio from WhatsApp servers
+  const stream = await downloadContentFromMessage(
+    { mediaKey: audioMsg.mediaKey!, directPath: audioMsg.directPath!, url: audioMsg.url! },
+    "audio",
+  );
+  const chunks: Buffer[] = [];
+  for await (const chunk of stream) {
+    chunks.push(Buffer.from(chunk));
+  }
+  const audioBuffer = Buffer.concat(chunks);
+
+  // Save to temp file
+  const tmpFile = `/tmp/wa-voice-${Date.now()}`;
+  await writeFile(`${tmpFile}.ogg`, audioBuffer);
+
+  // Transcribe with local whisper (no API key needed)
+  try {
+    await runCli(
+      "whisper",
+      [
+        `${tmpFile}.ogg`,
+        "--model",
+        "tiny",
+        "--language",
+        "en",
+        "--output_format",
+        "txt",
+        "--output_dir",
+        "/tmp",
+      ],
+      30000,
+    );
+
+    const transcript = (await readFile(`${tmpFile}.txt`, "utf-8")).trim();
+    return transcript || "(empty voice note)";
+  } finally {
+    // Clean up temp files
+    for (const ext of [".ogg", ".txt"]) {
+      await unlink(`${tmpFile}${ext}`).catch(() => {});
+    }
+  }
+}
 
 // Suppress Baileys verbose logging
 const logger = {
@@ -141,7 +256,7 @@ function handleCommand(text: string): Promise<string> | string {
         "/status — Bot uptime and stats",
         "/help — This message",
         "",
-        "Or just send a message and I'll echo it back.",
+        "Or just ask me anything — powered by AI.",
       ].join("\n");
 
     case "/status": {
@@ -173,24 +288,31 @@ function handleCommand(text: string): Promise<string> | string {
       if (trimmed.startsWith("/")) {
         return `Unknown command: ${cmd}\nType /help for available commands.`;
       }
-      // Echo non-command messages with a note
-      return `Got your message. Type /help for commands.`;
+      // AI-powered response (Codex first, Claude fallback)
+      return askAI(trimmed);
   }
 }
 
 async function handleMessage(sock: WASocket, msg: WAMessage): Promise<void> {
+  const jid = msg.key.remoteJid ?? "unknown";
+  const fromMe = msg.key.fromMe ?? false;
+  const msgType = msg.message ? Object.keys(msg.message).join(",") : "none";
+  console.log(`[wa-debug] msg from=${jid} fromMe=${fromMe} type=${msgType} id=${msg.key.id}`);
+
   // Skip status messages, reactions, etc.
-  if (!msg.message || msg.key.fromMe) {
+  if (!msg.message) {
     return;
   }
-  if (msg.key.remoteJid === "status@broadcast") {
+  if (jid === "status@broadcast") {
+    return;
+  }
+  // Skip messages the bot itself sent (prevents infinite loops)
+  if (fromMe && msg.key.id && sentByBot.has(msg.key.id)) {
+    console.log(`[wa-debug] Skipping own bot message ${msg.key.id}`);
     return;
   }
 
-  const sender = msg.key.remoteJid;
-  if (!sender) {
-    return;
-  }
+  const sender = jid;
 
   // Only respond to allowed senders
   if (!ALLOWED_SENDERS.has(sender)) {
@@ -200,8 +322,34 @@ async function handleMessage(sock: WASocket, msg: WAMessage): Promise<void> {
 
   messagesReceived++;
 
+  // Handle voice notes — transcribe then process as text
+  if (msg.message.audioMessage?.ptt) {
+    console.log(`[wa] Voice note from ${sender}: ${msg.message.audioMessage.seconds}s`);
+    try {
+      const transcript = await transcribeVoiceNote(msg);
+      console.log(`[wa] Transcribed: "${transcript.slice(0, 100)}"`);
+      const response = await handleCommand(transcript);
+      const sent = await sock.sendMessage(sender, { text: `_${transcript}_\n\n${response}` });
+      if (sent?.key?.id) {
+        sentByBot.add(sent.key.id);
+      }
+      messagesResponded++;
+      return;
+    } catch (err) {
+      console.error(`[wa] Voice transcription failed:`, err);
+      const sent = await sock.sendMessage(sender, {
+        text: "Couldn't transcribe that voice note. Try again or type your message.",
+      });
+      if (sent?.key?.id) {
+        sentByBot.add(sent.key.id);
+      }
+      return;
+    }
+  }
+
   // Extract text from various message types
   const text = msg.message.conversation || msg.message.extendedTextMessage?.text || "";
+  console.log(`[wa-debug] Extracted text: "${text.slice(0, 100)}"`);
 
   if (!text) {
     return;
@@ -211,7 +359,10 @@ async function handleMessage(sock: WASocket, msg: WAMessage): Promise<void> {
 
   try {
     const response = await handleCommand(text);
-    await sock.sendMessage(sender, { text: response });
+    const sent = await sock.sendMessage(sender, { text: response });
+    if (sent?.key?.id) {
+      sentByBot.add(sent.key.id);
+    }
     messagesResponded++;
     console.log(`[wa] Replied to ${sender}`);
   } catch (err) {
@@ -238,7 +389,14 @@ async function startBot(): Promise<void> {
   sock.ev.on("creds.update", saveCreds);
 
   sock.ev.on("connection.update", (update) => {
-    const { connection, lastDisconnect } = update;
+    const { connection, lastDisconnect, qr } = update;
+
+    if (qr) {
+      console.log("\n\n=== SCAN THIS QR CODE WITH WHATSAPP ===");
+      console.log("Open WhatsApp > Settings > Linked Devices > Link a Device\n");
+      qrcode.generate(qr, { small: true });
+      console.log("\n========================================\n");
+    }
 
     if (connection === "open") {
       console.log(`[wa-bot] Connected as: ${sock.user?.name ?? sock.user?.id}`);
