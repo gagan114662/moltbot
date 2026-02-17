@@ -136,9 +136,11 @@ async function sendMessage(text: string, to: string): Promise<void> {
     const result = await sock.sendMessage(jid, { text });
     console.log(`[wa] Sent! Message ID: ${result?.key?.id}`);
   } finally {
-    // Wait a moment for the message to actually send
-    await new Promise((r) => setTimeout(r, 2000));
+    // Wait for message to flush to server, then force exit
+    // (Baileys leaves timers/listeners that prevent clean exit)
+    await new Promise((r) => setTimeout(r, 3000));
     cleanup();
+    process.exit(0);
   }
 }
 
@@ -161,8 +163,10 @@ async function checkStatus(): Promise<void> {
     console.log(`[wa] Status: CONNECTED`);
     console.log(`[wa] User: ${sock.user?.name} (${sock.user?.id})`);
     cleanup();
+    process.exit(0);
   } catch (err) {
     console.log(`[wa] Status: DISCONNECTED — ${(err as Error).message}`);
+    process.exit(1);
   }
 }
 
@@ -180,6 +184,7 @@ if (args.includes("--status")) {
     .then(({ cleanup }) => {
       console.log("[wa] Re-linked successfully!");
       cleanup();
+      process.exit(0);
     })
     .catch((e) => {
       console.error("[wa] Re-link failed:", e.message);
