@@ -22,7 +22,7 @@ import path from "node:path";
 import { chromium, type Browser, type Page } from "playwright-core";
 
 const BOT_TOKEN = process.env.TELEGRAM_BOT_TOKEN;
-const PAYPAL_EMAIL = "vandan@getfoolish.com";
+const PAYPAL_EMAIL = process.env.PAYPAL_EMAIL ?? "vandan@getfoolish.com";
 const PRO_PRICE = "$9.99/month";
 const API_BASE = `https://api.telegram.org/bot${BOT_TOKEN}`;
 
@@ -842,11 +842,9 @@ async function handleUpdate(update: {
 
   // Handle voice messages
   if (msg.voice) {
-    console.log(`[tg] Voice note from ${userId}: ${msg.voice.duration}s`);
     try {
       await sendMessage(chatId, "_Transcribing..._");
       const transcript = await transcribeVoice(msg.voice.file_id);
-      console.log(`[tg] Transcribed: "${transcript.slice(0, 100)}"`);
       await sendMessage(chatId, `_"${transcript}"_`);
 
       // Process as command or AI
@@ -860,12 +858,12 @@ async function handleUpdate(update: {
           const voiceBuffer = await textToSpeechOgg(response);
           await sendVoice(chatId, voiceBuffer);
         } catch (ttsErr) {
-          console.log(`[tg] TTS failed, text only: ${(ttsErr as Error).message.slice(0, 80)}`);
+          // TTS failed, fall back to text only
           await sendMessage(chatId, response, "");
         }
       }
     } catch (err) {
-      console.error("[tg] Voice processing failed:", err);
+      process.stderr.write(`[tg] Voice processing failed: ${err}\n`);
       await sendMessage(chatId, "Couldn't process voice note. Try typing your message.");
     }
     return;
@@ -903,7 +901,7 @@ async function poll(offset = 0): Promise<void> {
       }
     }
   } catch (err) {
-    console.error("Poll error:", err);
+    process.stderr.write(`Poll error: ${err}\n`);
     await new Promise((r) => setTimeout(r, 5000));
   }
 
@@ -914,16 +912,18 @@ async function poll(offset = 0): Promise<void> {
 // --- Main ---
 
 if (!BOT_TOKEN) {
-  console.error("Set TELEGRAM_BOT_TOKEN environment variable");
-  console.log("1. Message @BotFather on Telegram");
-  console.log("2. /newbot → choose a name → copy the token");
-  console.log("3. Run: TELEGRAM_BOT_TOKEN=xxx npx tsx src/telegram/bot/security-bot.ts");
+  process.stderr.write("ERROR: Set TELEGRAM_BOT_TOKEN environment variable\n");
+  process.stderr.write("1. Message @BotFather on Telegram\n");
+  process.stderr.write("2. /newbot → choose a name → copy the token\n");
+  process.stderr.write("3. Run: TELEGRAM_BOT_TOKEN=xxx npx tsx src/telegram/bot/security-bot.ts\n");
   process.exit(1);
 }
 
-console.log("Moltbot Telegram Security Bot starting...");
-console.log(`Commands: /ping /help /whois /dns /headers /deepscan /vulnscan /techstack /activate`);
-console.log(`Pro: ${PRO_PRICE} via PayPal (${PAYPAL_EMAIL})`);
+process.stdout.write("Moltbot Telegram Security Bot starting...\n");
+process.stdout.write(
+  `Commands: /ping /help /whois /dns /headers /deepscan /vulnscan /techstack /activate\n`,
+);
+process.stdout.write(`Pro: ${PRO_PRICE} via PayPal (${PAYPAL_EMAIL})\n`);
 
 // Set bot commands
 apiCall("setMyCommands", {
@@ -943,6 +943,6 @@ apiCall("setMyCommands", {
     { command: "ss", description: "Screenshot current page" },
   ],
 }).then(() => {
-  console.log("Bot commands registered. Starting poll loop...");
+  process.stdout.write("Bot commands registered. Starting poll loop...\n");
   poll();
 });
