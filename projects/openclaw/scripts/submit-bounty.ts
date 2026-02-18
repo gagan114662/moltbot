@@ -302,16 +302,82 @@ function logSubmission(
 
 // --- Main ---
 
+// --- JSON Findings Input ---
+
+interface JsonFinding {
+  id: string;
+  title: string;
+  severity: string;
+  cwe: string;
+  cvss_score?: number;
+  description: string;
+  steps_to_reproduce: string[];
+  impact: string;
+  evidence: string[];
+  recommendation: string;
+  asset: string;
+  asset_type: string;
+  reportable: boolean;
+}
+
+interface FindingsJson {
+  target: string;
+  program: string;
+  findings: JsonFinding[];
+}
+
+function parseJsonFindings(filePath: string): ParsedReport[] {
+  const data: FindingsJson = JSON.parse(fs.readFileSync(filePath, "utf-8"));
+  return data.findings
+    .filter((f) => f.reportable)
+    .map((f) => {
+      const stepsText = f.steps_to_reproduce
+        .map((s, i) => `${i + 1}. ${s.replace(/^\d+\.\s*/, "")}`)
+        .join("\n");
+
+      const description = [
+        f.description,
+        "",
+        "## Steps to Reproduce",
+        stepsText,
+        "",
+        "## Impact",
+        f.impact,
+        "",
+        "## Suggested Fix",
+        f.recommendation,
+      ].join("\n");
+
+      return {
+        title: f.title,
+        summary: f.description,
+        impact: f.impact,
+        severity: f.severity,
+        weakness: f.cwe,
+        steps: stepsText,
+        fix: f.recommendation,
+        full_description: description,
+      };
+    });
+}
+
+// --- Main ---
+
 async function main(): Promise<void> {
   const args = process.argv.slice(2);
 
   if (args.length < 2) {
-    console.log("Usage: npx tsx scripts/submit-bounty.ts <program-handle> <report-file>");
+    console.log("Usage:");
+    console.log("  npx tsx scripts/submit-bounty.ts <program-handle> <report-file.md>");
+    console.log("  npx tsx scripts/submit-bounty.ts <program-handle> <findings.json>");
+    console.log("");
+    console.log("Supports both markdown reports and JSON findings files.");
     console.log("");
     console.log("Example:");
     console.log(
       "  npx tsx scripts/submit-bounty.ts 8x8-bounty ~/.openclaw/workspace/evidence/engagements/8x8-recon/HACKERONE-SUBMISSION.md",
     );
+    console.log("  npx tsx scripts/submit-bounty.ts 8x8-bounty /tmp/recon-results/findings.json");
     process.exit(1);
   }
 
@@ -336,19 +402,43 @@ async function main(): Promise<void> {
     process.exit(1);
   }
 
-  // 3. Parse report
-  console.log(`\nParsing report: ${resolvedPath}`);
-  const report = parseReportFile(resolvedPath);
+  // 3. Parse report(s)
+  const isJson = resolvedPath.endsWith(".json");
 
-  // 4. Submit
-  const result = await submitReport(creds, programHandle, report);
+  if (isJson) {
+    // JSON findings mode — submit all reportable findings
+    console.log(`\nParsing JSON findings: ${resolvedPath}`);
+    const reports = parseJsonFindings(resolvedPath);
 
-  if (result) {
-    // 5. Log
-    logSubmission(programHandle, report, result);
-    console.log("\nDone! Your first bounty report is submitted.");
+    if (reports.length === 0) {
+      console.log("No reportable findings in the JSON file.");
+      process.exit(0);
+    }
+
+    console.log(`Found ${reports.length} reportable finding(s)`);
+
+    let submitted = 0;
+    for (const report of reports) {
+      console.log(`\n--- Submitting: ${report.title} ---`);
+      const result = await submitReport(creds, programHandle, report);
+      if (result) {
+        logSubmission(programHandle, report, result);
+        submitted++;
+      }
+    }
+    console.log(`\nDone! ${submitted}/${reports.length} reports submitted.`);
   } else {
-    process.exit(1);
+    // Markdown mode — original behavior
+    console.log(`\nParsing report: ${resolvedPath}`);
+    const report = parseReportFile(resolvedPath);
+    const result = await submitReport(creds, programHandle, report);
+
+    if (result) {
+      logSubmission(programHandle, report, result);
+      console.log("\nDone! Your bounty report is submitted.");
+    } else {
+      process.exit(1);
+    }
   }
 }
 

@@ -134,7 +134,8 @@ export function createSecuritySandboxTool(): AnyAgentTool {
       "ONLY for authorized bug bounty programs and CTF targets. " +
       "Actions: create_engagement, run_scan, get_results, destroy_engagement, list_engagements, build_image, status.",
     schema: SecuritySandboxSchema,
-    async execute(params: Record<string, unknown>) {
+    async execute(_toolCallId: string, args: unknown) {
+      const params = (args ?? {}) as Record<string, unknown>;
       const action = readStringParam(params, "action", { required: true });
 
       switch (action) {

@@ -52,8 +52,13 @@ RUN --mount=type=cache,target=/var/cache/apt,sharing=locked \
     wget \
     && rm -rf /var/lib/apt/lists/*
 
-# Pre-install Playwright + Chromium browser
-RUN npm install -g playwright && npx playwright install chromium
+# Pre-install Playwright + Chromium browser with stealth capabilities
+RUN npm install -g playwright playwright-extra puppeteer-extra-plugin-stealth && \
+    npx playwright install chromium
+
+# Install Python Playwright + stealth library and download Chromium for Python
+RUN pip install playwright playwright-stealth && \
+    python -m playwright install chromium
 
 RUN --mount=type=cache,target=/root/.cache/uv \
     uv pip install --system --upgrade pip setuptools wheel

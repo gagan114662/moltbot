@@ -197,7 +197,8 @@ export function createRevenueTrackerTool(): AnyAgentTool {
       "Logs payments to revenue.jsonl with agent attribution chain. " +
       "Supports: log_revenue, log_cost, get_summary, get_agent_pnl, get_total.",
     schema: RevenueTrackerSchema,
-    async execute(params: Record<string, unknown>) {
+    async execute(_toolCallId: string, args: unknown) {
+      const params = (args ?? {}) as Record<string, unknown>;
       const action = readStringParam(params, "action", { required: true });
 
       switch (action) {
